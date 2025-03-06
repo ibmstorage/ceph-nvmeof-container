@@ -1,1 +1,0 @@
-wait_gateways_4gws.sh
