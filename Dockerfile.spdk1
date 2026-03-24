@@ -52,7 +52,7 @@ tsflags=nodocs
 EOF
 
 ARG SPDK_CEPH_VERSION
-ARG CEPH_CLUSTER_CEPH_REPO_BASEURL=https://download.ceph.com/rpm-${SPDK_CEPH_VERSION}/el9/x86_64
+ARG CEPH_CLUSTER_CEPH_REPO_BASEURL=https://download.ceph.com/rpm-${SPDK_CEPH_VERSION}/el9/\$basearch
 
 COPY <<EOF /etc/yum.repos.d/ceph.repo
 [Ceph]
