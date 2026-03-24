@@ -2,15 +2,15 @@
 # vim: syntax=dockerfile
 
 ARG DNF_OPTS="\
+  --enablerepo crb \
   --nobest \
   --nodocs \
   --setopt=install_weak_deps=0 \
   --setopt=keepcache=1 \
   --setopt=cachedir=/var/cache/dnf \
   "
-ARG ACCEL_CONFIG_SRC="/accel-config"
 
-FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi9:latest AS build
+FROM quay.io/centos/centos:stream9 AS build
 
 ARG SPDK_CEPH_VERSION \
     CEPH_CLUSTER_CEPH_REPO_BASEURL \
@@ -19,8 +19,7 @@ ARG SPDK_CEPH_VERSION \
     SPDK_PKGDEP_ARGS \
     SPDK_CONFIGURE_ARGS \
     SPDK_TARGET_ARCH \
-    SPDK_MAKEFLAGS \
-    ACCEL_CONFIG_SRC
+    SPDK_MAKEFLAGS
 
 RUN <<EOF
     echo Log variables
@@ -30,7 +29,6 @@ RUN <<EOF
     echo SPDK_TARGET_ARCH=$SPDK_TARGET_ARCH
     echo SPDK_MAKEFLAGS=$SPDK_MAKEFLAGS
     echo CEPH_CLUSTER_CEPH_REPO_BASEURL=$CEPH_CLUSTER_CEPH_REPO_BASEURL
-    echo ACCEL_CONFIG_SRC=$ACCEL_CONFIG_SRC
     echo ======================================================================
 EOF
 
@@ -50,55 +48,38 @@ keepcache=True
 tsflags=nodocs
 EOF
 
+COPY <<EOF /etc/yum.repos.d/ceph.repo
+[Ceph]
+name=Ceph packages for \$basearch
+baseurl=${CEPH_CLUSTER_CEPH_REPO_BASEURL:-https://download.ceph.com/rpm-${SPDK_CEPH_VERSION}/el\$releasever}/\$basearch
+enabled=1
+priority=2
+gpgcheck=0
 
-RUN --mount=type=secret,id=org-id --mount=type=secret,id=activation-key subscription-manager register --activationkey=$(cat /run/secrets/activation-key) --org=$(cat /run/secrets/org-id)
+[Ceph-noarch]
+name=Ceph noarch packages
+baseurl=${CEPH_CLUSTER_CEPH_REPO_BASEURL:-https://download.ceph.com/rpm-${SPDK_CEPH_VERSION}/el\$releasever}/noarch
+enabled=1
+priority=2
+gpgcheck=0
+EOF
 
-RUN subscription-manager repos --enable rhel-9-for-x86_64-baseos-rpms
-RUN subscription-manager repos --enable rhel-9-for-x86_64-appstream-rpms
-RUN subscription-manager repos --enable rhel-9-for-x86_64-highavailability-rpms
-RUN subscription-manager repos --enable codeready-builder-for-rhel-9-x86_64-rpms
+RUN dnf install -y python3-pip
 
-COPY spdk/ /src/
-COPY spdk/scripts/ /src/scripts/
-COPY spdk/rpmbuild/ /src/rpmbuild/
-RUN ls -l /src/rpmbuild/
-RUN ls -l /src/configure && ls -l /src/rpmbuild/rpm.sh
+RUN pip install --no-cache-dir -U "setuptools<69" "packaging<24"
 
 RUN \
     --mount=type=cache,target=/var/cache/dnf \
     --mount=type=cache,target=/var/lib/dnf \
     --mount=type=cache,target=/root/.cache/pip \
-    rpm --import https://www.elrepo.org/RPM-GPG-KEY-elrepo.org \
-    && rpm --import https://www.elrepo.org/RPM-GPG-KEY-v2-elrepo.org \
-    && dnf install -y $DNF_OPTS dnf-plugins-core \
-    && dnf install -y https://www.elrepo.org/elrepo-release-9.el9.elrepo.noarch.rpm \
-    && dnf install -y $DNF_OPTS \
-       https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm \
-       https://dl.fedoraproject.org/pub/epel/epel-next-release-latest-9.noarch.rpm \
-    && chmod +x scripts/pkgdep.sh \
+    dnf install $DNF_OPTS -y 'dnf-command(config-manager)' \
+    && dnf config-manager --set-enabled crb \
+    && dnf install $DNF_OPTS -y \
+        rpm-build \
+        git-core \
+    && rpm -vih https://buildlogs.centos.org/centos/9-stream/storage/x86_64/ceph-reef/Packages/t/thrift-0.15.0-3.el9s.x86_64.rpm \
     && scripts/pkgdep.sh $SPDK_PKGDEP_ARGS \
-    && dnf update -y $DNF_OPTS
-
-RUN \
-    --mount=type=cache,target=/var/cache/dnf \
-    --mount=type=cache,target=/var/lib/dnf \
-    --mount=type=cache,target=/root/.cache/pip \
-    dnf groupinstall -y "Development Tools" \
-    && dnf install -y autoconf automake libtool pkgconf rpm-build rpmdevtools \
-    && dnf install -y which asciidoc xmlto libuuid-devel json-c-devel zlib-devel openssl-devel \
-    && mkdir -p $ACCEL_CONFIG_SRC \
-    && git clone https://github.com/intel/idxd-config.git $ACCEL_CONFIG_SRC \
-    && pushd $ACCEL_CONFIG_SRC \
-    && ./autogen.sh \
-    && ./configure CFLAGS='-g -O2' --prefix=/usr --sysconfdir=/etc \
-                   --libdir=/usr/lib64 --enable-test=yes \
-                   --disable-docs \
-    && mkdir -p /root/rpmbuild/SOURCES \
-    && make rhel/accfg.spec \
-    && ./rpmbuild.sh \
-    && ls -l /root/rpmbuild/RPMS/$(uname -m) \
-    && rpm -ivh /root/rpmbuild/RPMS/$(uname -m)/accel-config-"*".rpm \
-    && ls -l /usr/include/accel-config/libaccel_config.h
+    && dnf $DNF_OPTS update -y
 
 RUN \
     --mount=type=cache,target=/var/cache/dnf \
@@ -112,31 +93,23 @@ RUN \
 # build bdevperf example, will not be a part of generated rpm
 RUN make -C ./examples/bdev/bdevperf
 
-# # Ensure /root/rpmbuild/rpm exists and contains RPMs
-# RUN mkdir -p /root/rpmbuild/rpm \
-#     && find /root/rpmbuild/RPMS -type f -name "*.rpm" -exec cp {} /root/rpmbuild/rpm/ \; \
-#     && ls -l /root/rpmbuild/rpm
-
-RUN subscription-manager unregister
 #------------------------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi9/ubi@sha256:66233eebd72bb5baa25190d4f55e1dc3fff3a9b77186c1f91a0abdb274452072 AS rpm-export
+FROM registry.access.redhat.com/ubi9/ubi@sha256:66233eebd72bb5baa25190d4f55e1dc3fff3a9b77186c1f91a0abdb274452072 AS rpm-export
 COPY --from=build /root/rpmbuild/rpm /rpm
-COPY --from=build /root/rpmbuild/RPMS/x86_64 /rpm
 
 #------------------------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi9/ubi@sha256:66233eebd72bb5baa25190d4f55e1dc3fff3a9b77186c1f91a0abdb274452072 as spdk
+FROM registry.access.redhat.com/ubi9/ubi@sha256:66233eebd72bb5baa25190d4f55e1dc3fff3a9b77186c1f91a0abdb274452072 as spdk
 
 ARG SPDK_CEPH_VERSION \
     SPDK_VERSION \
     DNF_OPTS
 
-# ARG SPDK_CENTOS_BASE="https://mirror.stream.centos.org/9-stream/BaseOS/x86_64/os/Packages/"
-# # This would become obsolete as the release rolls out new packages
-# ARG SPDK_CENTOS_REPO_VER="9.0-28.el9"
+ARG SPDK_CENTOS_BASE="https://mirror.stream.centos.org/9-stream/BaseOS/x86_64/os/Packages/"
+# This would become obsolete as the release rolls out new packages
+ARG SPDK_CENTOS_REPO_VER="9.0-21.el9"
 
 ARG SPDK_PKGDEP_ARGS \
     SPDK_CONFIGURE_ARGS \
-    SPDK_TARGET_ARCH \
     SPDK_MAKEFLAGS
 
 ARG SPDK_NAME \
@@ -176,33 +149,23 @@ LABEL org.centos.url="$SPDK_CENTOS_BASE" \
       org.centos.version="$SPDK_CENTOS_REPO_VER"
 
 COPY --from=build /etc/yum.conf /etc/yum.conf
-# COPY --from=build /etc/yum.repos.d/ceph.repo /etc/yum.repos.d/ceph.repo
+COPY --from=build /etc/yum.repos.d/ceph.repo /etc/yum.repos.d/ceph.repo
 
-COPY --from=build /root/rpmbuild/rpm /rpm
-
-RUN --mount=type=secret,id=activation-key \
-    --mount=type=secret,id=org-id \
-    subscription-manager register \
-        --activationkey=$(cat /run/secrets/activation-key) \
-        --org=$(cat /run/secrets/org-id) && \
-    ARCH=$(uname -m) && \
-    echo "=== Detected architecture: $ARCH ===" && \
-    subscription-manager repos --list | grep rhel-10 || true && \
-    subscription-manager repos \
-        --enable=rhel-9-for-$ARCH-baseos-rpms \
-        --enable=rhel-9-for-$ARCH-appstream-rpms \
-        --enable=codeready-builder-for-rhel-9-$ARCH-rpms && \
-    rpm -vih https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm \
-    && rpm -vih https://dl.fedoraproject.org/pub/epel/epel-next-release-latest-9.noarch.rpm \
+RUN \
+    --mount=type=bind,from=build,source=/root/rpmbuild/rpm,target=/rpm \
+    --mount=type=cache,target=/var/cache/dnf \
+    --mount=type=cache,target=/var/lib/dnf \
+    rpm -vih $SPDK_CENTOS_BASE/centos-stream-repos-$SPDK_CENTOS_REPO_VER.noarch.rpm \
+             $SPDK_CENTOS_BASE/centos-gpg-keys-$SPDK_CENTOS_REPO_VER.noarch.rpm \
+    && rpm -vih https://buildlogs.centos.org/centos/9-stream/storage/x86_64/ceph-reef/Packages/t/thrift-0.15.0-3.el9s.x86_64.rpm \
     && dnf $DNF_OPTS install -y /rpm/$(uname -m)/*.rpm \
     && dnf $DNF_OPTS update -y
 
 ENTRYPOINT [ "/usr/local/bin/nvmf_tgt" ]
 CMD [ "-u", "-r", "/var/tmp/spdk.sock" ]
 
-RUN subscription-manager unregister
 #------------------------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM spdk AS bdevperf
+FROM spdk AS bdevperf
 
 # Default test run duration in secs
 ENV BDEVPERF_TEST_DURATION="90"

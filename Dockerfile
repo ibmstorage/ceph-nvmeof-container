@@ -14,6 +14,9 @@ CMD []
 #------------------------------------------------------------------------------
 # Base image for NVMEOF_TARGET=gateway (nvmeof-gateway)
 ARG SPDK_IMAGE
+ARG REMOTE_SOURCES_DIR=/remote-source
+ARG REMOTE_SOURCES=ceph-nvmeof
+
 FROM ${SPDK_IMAGE} AS base-gateway
 
 COPY $REMOTE_SOURCES $REMOTE_SOURCES_DIR
@@ -24,7 +27,7 @@ RUN --mount=type=secret,id=org-id --mount=type=secret,id=activation-key subscrip
 
 RUN subscription-manager repos --enable=codeready-builder-for-rhel-9-$(arch)-rpms
 
-RUN dnf install -y python3-rados python3-rbd gdb ceph-mon-client-nvmeof librbd1 --nobest --allowerasing
+RUN dnf install -y python3-rados python3-rbd gdb ceph-mon-client-nvmeof
 
 RUN mkdir -p /src
 
@@ -38,7 +41,7 @@ FROM base-$NVMEOF_TARGET AS python-intermediate
 RUN \
     --mount=type=cache,target=/var/cache/dnf \
     --mount=type=cache,target=/var/lib/dnf \
-    dnf update -y
+    dnf update -y --allowerasing --nobest
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONIOENCODING=UTF-8 \
@@ -56,6 +59,7 @@ ARG NVMEOF_NAME \
     NVMEOF_DESCRIPTION \
     NVMEOF_URL \
     NVMEOF_VERSION \
+    NVMEOF_CLI_VERSION \
     NVMEOF_MAINTAINER \
     NVMEOF_TAGS \
     NVMEOF_WANTS \
@@ -74,6 +78,7 @@ ARG NVMEOF_NAME \
     HUGEPAGES_DIR
 
 ENV NVMEOF_VERSION="${NVMEOF_VERSION}" \
+      NVMEOF_CLI_VERSION="${NVMEOF_CLI_VERSION}" \
       NVMEOF_GIT_REPO="${NVMEOF_GIT_REPO}" \
       NVMEOF_GIT_BRANCH="${NVMEOF_GIT_BRANCH}" \
       NVMEOF_GIT_COMMIT="${NVMEOF_GIT_COMMIT}" \
@@ -159,11 +164,12 @@ COPY ceph-nvmeof.conf /src/
 RUN pdm run protoc
 
 #------------------------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM python-intermediate
+FROM python-intermediate
 ARG NVMEOF_CLI_VERSION
 ENV NVMEOF_CLI_VERSION="${NVMEOF_CLI_VERSION}"
 COPY --from=builder /src /src
 
+RUN ln -sf /remote-source/ceph-nvmeof/app/ceph-nvmeof.conf /src/ceph-nvmeof.conf
 ENV PYTHONPATH=/src:$PYTHONPATH
 
 RUN subscription-manager unregister || true

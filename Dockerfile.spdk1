@@ -51,8 +51,8 @@ keepcache=True
 tsflags=nodocs
 EOF
 
-ARG SPDK_CEPH_VERSION=19.2.3
-ARG CEPH_CLUSTER_CEPH_REPO_BASEURL=https://download.ceph.com/rpm-${SPDK_CEPH_VERSION}/el9/\$basearch
+ARG SPDK_CEPH_VERSION
+ARG CEPH_CLUSTER_CEPH_REPO_BASEURL=https://download.ceph.com/rpm-${SPDK_CEPH_VERSION}/el9/x86_64
 
 COPY <<EOF /etc/yum.repos.d/ceph.repo
 [Ceph]
@@ -114,6 +114,8 @@ RUN \
     && ls -l /root/rpmbuild/RPMS/$(uname -m) \
     && rpm -ivh /root/rpmbuild/RPMS/$(uname -m)/accel-config-"*".rpm \
     && ls -l /usr/include/accel-config/libaccel_config.h
+
+RUN python3 -m pip install --no-cache-dir "setuptools<69" "packaging<24"
 
 RUN \
     --mount=type=cache,target=/var/cache/dnf \
