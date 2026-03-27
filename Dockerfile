@@ -1,6 +1,6 @@
 # syntax = docker/dockerfile:1.4
 
-ARG NVMEOF_SPDK_VERSION \
+ARG SPDK_IMAGE \
     CONTAINER_REGISTRY \
     NVMEOF_TARGET  # either 'gateway' or 'cli'
 
@@ -13,17 +13,23 @@ CMD []
 
 #------------------------------------------------------------------------------
 # Base image for NVMEOF_TARGET=gateway (nvmeof-gateway)
-FROM ${CONTAINER_REGISTRY:-quay.io/ceph}/spdk:${NVMEOF_SPDK_VERSION:-NULL} AS base-gateway
-RUN \
-    --mount=type=cache,target=/var/cache/dnf \
-    --mount=type=cache,target=/var/lib/dnf \
-    dnf install -y python3-rados && \
-    dnf install -y python3-rbd && \
-    dnf install -y gdb && \
-    dnf config-manager --set-enabled crb && \
-    dnf install -y ceph-mon-client-nvmeof
+ARG SPDK_IMAGE
+FROM ${SPDK_IMAGE} AS base-gateway
+
+COPY $REMOTE_SOURCES $REMOTE_SOURCES_DIR
+
+WORKDIR ${REMOTE_SOURCES_DIR}/${REMOTE_SOURCES}/app
+
+RUN --mount=type=secret,id=org-id --mount=type=secret,id=activation-key subscription-manager register --activationkey=$(cat /run/secrets/activation-key) --org=$(cat /run/secrets/org-id)
+
+RUN subscription-manager repos --enable=codeready-builder-for-rhel-9-$(arch)-rpms
+
+RUN dnf install -y python3-rados python3-rbd gdb ceph-mon-client-nvmeof librbd1 --nobest --allowerasing
+
+RUN mkdir -p /src
+
 ENTRYPOINT ["python3", "-m", "control"]
-CMD ["-c", "/src/ceph-nvmeof.conf"]
+CMD ["-c", "ceph-nvmeof.conf"]
 
 #------------------------------------------------------------------------------
 # Intermediate layer for Python set-up
@@ -149,8 +155,15 @@ RUN \
     pdm "$PDM_INSTALL_CMD" $PDM_INSTALL_FLAGS
 
 COPY . .
+COPY ceph-nvmeof.conf /src/
 RUN pdm run protoc
 
 #------------------------------------------------------------------------------
-FROM python-intermediate
-COPY --from=builder $APPDIR .
+FROM --platform=$BUILDPLATFORM python-intermediate
+ARG NVMEOF_CLI_VERSION
+ENV NVMEOF_CLI_VERSION="${NVMEOF_CLI_VERSION}"
+COPY --from=builder /src /src
+
+ENV PYTHONPATH=/src:$PYTHONPATH
+
+RUN subscription-manager unregister || true
