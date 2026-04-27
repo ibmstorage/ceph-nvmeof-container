@@ -128,12 +128,12 @@ RUN \
 RUN make -C ./examples/bdev/bdevperf
 
 #------------------------------------------------------------------------------
-FROM registry.access.redhat.com/ubi9/ubi@sha256:66233eebd72bb5baa25190d4f55e1dc3fff3a9b77186c1f91a0abdb274452072 AS rpm-export
+FROM registry.redhat.io/ubi9/ubi:9.7 AS rpm-export
 COPY --from=build /root/rpmbuild/rpm /rpm
 COPY --from=build /root/rpmbuild/RPMS /rpm
 
 #------------------------------------------------------------------------------
-FROM registry.access.redhat.com/ubi9/ubi@sha256:66233eebd72bb5baa25190d4f55e1dc3fff3a9b77186c1f91a0abdb274452072 as spdk
+FROM registry.redhat.io/ubi9/ubi:9.7 as spdk
 
 ARG SPDK_CEPH_VERSION \
     SPDK_VERSION \
@@ -141,7 +141,7 @@ ARG SPDK_CEPH_VERSION \
 
 ARG SPDK_CENTOS_BASE="https://mirror.stream.centos.org/9-stream/BaseOS/x86_64/os/Packages/"
 # This would become obsolete as the release rolls out new packages
-ARG SPDK_CENTOS_REPO_VER="9.0-28.el9"
+ARG SPDK_CENTOS_REPO_VER="9.0-30.el9"
 
 ARG SPDK_PKGDEP_ARGS \
     SPDK_CONFIGURE_ARGS \
@@ -195,6 +195,7 @@ RUN \
              $SPDK_CENTOS_BASE/centos-gpg-keys-$SPDK_CENTOS_REPO_VER.noarch.rpm \
     && rpm -vih https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm \
     && dnf $DNF_OPTS install -y /rpm/$(uname -m)/*.rpm \
+    && dnf $DNF_OPTS install -y openssl-fips-provider \
     && dnf $DNF_OPTS update -y
 
 ENTRYPOINT [ "/usr/local/bin/nvmf_tgt" ]
