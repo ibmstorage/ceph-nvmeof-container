@@ -195,7 +195,9 @@ RUN \
              $SPDK_CENTOS_BASE/centos-gpg-keys-$SPDK_CENTOS_REPO_VER.noarch.rpm \
     && rpm -vih https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm \
     && dnf $DNF_OPTS install -y /rpm/$(uname -m)/*.rpm \
-    && dnf $DNF_OPTS update -y --allowerasing
+    && dnf remove -y openssl-fips-provider-so \
+    && dnf install -y openssl-fips-provider \
+    && dnf $DNF_OPTS update -y
 
 ENTRYPOINT [ "/usr/local/bin/nvmf_tgt" ]
 CMD [ "-u", "-r", "/var/tmp/spdk.sock" ]
