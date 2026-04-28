@@ -2,7 +2,6 @@
 # vim: syntax=dockerfile
 
 ARG DNF_OPTS="\
-  --enablerepo crb \
   --nobest \
   --nodocs \
   --setopt=install_weak_deps=0 \
@@ -189,15 +188,23 @@ LABEL org.centos.url="$SPDK_CENTOS_BASE" \
 COPY --from=build /etc/yum.conf /etc/yum.conf
 COPY --from=build /etc/yum.repos.d/ceph.repo /etc/yum.repos.d/ceph.repo
 
-RUN \
-    --mount=type=bind,from=build,source=/root/rpmbuild/rpm,target=/rpm \
+RUN --mount=type=secret,id=org-id \
+    --mount=type=secret,id=activation-key \
+    --mount=type=bind,from=build,source=/root/rpmbuild/RPMS,target=/rpm \
     --mount=type=cache,target=/var/cache/dnf \
     --mount=type=cache,target=/var/lib/dnf \
-    rpm -vih $SPDK_CENTOS_BASE/centos-stream-repos-$SPDK_CENTOS_REPO_VER.noarch.rpm \
-             $SPDK_CENTOS_BASE/centos-gpg-keys-$SPDK_CENTOS_REPO_VER.noarch.rpm \
-    && rpm -vih https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm \
-    && dnf $DNF_OPTS install -y /rpm/$(uname -m)/*.rpm --exclude=openssl-fips-provider \
-    && dnf $DNF_OPTS update -y --exclude=openssl-fips-provider
+    subscription-manager register \
+      --activationkey=$(cat /run/secrets/activation-key) \
+      --org=$(cat /run/secrets/org-id) \
+    && subscription-manager repos \
+      --enable=rhel-9-for-$(arch)-baseos-rpms \
+      --enable=rhel-9-for-$(arch)-appstream-rpms \
+      --enable=codeready-builder-for-rhel-9-$(arch)-rpms \
+    && dnf $DNF_OPTS upgrade -y openssl openssl-libs openssl-fips-provider --allowerasing \
+    && ls -l /rpm && ls -l /rpm/$(uname -m) \
+    && dnf $DNF_OPTS install -y /rpm/$(uname -m)/*.rpm \
+    && dnf $DNF_OPTS update -y \
+    && subscription-manager unregister
 
 ENTRYPOINT [ "/usr/local/bin/nvmf_tgt" ]
 CMD [ "-u", "-r", "/var/tmp/spdk.sock" ]
