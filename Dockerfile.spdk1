@@ -2,7 +2,6 @@
 # vim: syntax=dockerfile
 
 ARG DNF_OPTS="\
-  --enablerepo crb \
   --nobest \
   --nodocs \
   --setopt=install_weak_deps=0 \
@@ -128,12 +127,12 @@ RUN \
 RUN make -C ./examples/bdev/bdevperf
 
 #------------------------------------------------------------------------------
-FROM registry.access.redhat.com/ubi9/ubi@sha256:66233eebd72bb5baa25190d4f55e1dc3fff3a9b77186c1f91a0abdb274452072 AS rpm-export
+FROM registry.redhat.io/ubi9/ubi:9.7 AS rpm-export
 COPY --from=build /root/rpmbuild/rpm /rpm
 COPY --from=build /root/rpmbuild/RPMS /rpm
 
 #------------------------------------------------------------------------------
-FROM registry.access.redhat.com/ubi9/ubi@sha256:66233eebd72bb5baa25190d4f55e1dc3fff3a9b77186c1f91a0abdb274452072 as spdk
+FROM registry.redhat.io/ubi9/ubi:9.7 as spdk
 
 ARG SPDK_CEPH_VERSION \
     SPDK_VERSION \
@@ -187,15 +186,23 @@ LABEL org.centos.url="$SPDK_CENTOS_BASE" \
 COPY --from=build /etc/yum.conf /etc/yum.conf
 COPY --from=build /etc/yum.repos.d/ceph.repo /etc/yum.repos.d/ceph.repo
 
-RUN \
-    --mount=type=bind,from=build,source=/root/rpmbuild/rpm,target=/rpm \
+RUN --mount=type=secret,id=org-id \
+    --mount=type=secret,id=activation-key \
+    --mount=type=bind,from=build,source=/root/rpmbuild/RPMS,target=/rpm \
     --mount=type=cache,target=/var/cache/dnf \
     --mount=type=cache,target=/var/lib/dnf \
-    rpm -vih $SPDK_CENTOS_BASE/centos-stream-repos-$SPDK_CENTOS_REPO_VER.noarch.rpm \
-             $SPDK_CENTOS_BASE/centos-gpg-keys-$SPDK_CENTOS_REPO_VER.noarch.rpm \
-    && rpm -vih https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm \
+    subscription-manager register \
+      --activationkey=$(cat /run/secrets/activation-key) \
+      --org=$(cat /run/secrets/org-id) \
+    && subscription-manager repos \
+      --enable=rhel-9-for-$(arch)-baseos-rpms \
+      --enable=rhel-9-for-$(arch)-appstream-rpms \
+      --enable=codeready-builder-for-rhel-9-$(arch)-rpms \
+    && dnf $DNF_OPTS upgrade -y openssl openssl-libs openssl-fips-provider --allowerasing \
+    && ls -l /rpm && ls -l /rpm/$(uname -m) \
     && dnf $DNF_OPTS install -y /rpm/$(uname -m)/*.rpm \
-    && dnf $DNF_OPTS update -y
+    && dnf $DNF_OPTS update -y \
+    && subscription-manager unregister
 
 ENTRYPOINT [ "/usr/local/bin/nvmf_tgt" ]
 CMD [ "-u", "-r", "/var/tmp/spdk.sock" ]
