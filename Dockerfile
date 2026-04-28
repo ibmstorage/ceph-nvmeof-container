@@ -6,7 +6,7 @@ ARG SPDK_IMAGE \
 
 #------------------------------------------------------------------------------
 # Base image for NVMEOF_TARGET=cli (nvmeof-cli)
-FROM registry.access.redhat.com/ubi9/ubi@sha256:66233eebd72bb5baa25190d4f55e1dc3fff3a9b77186c1f91a0abdb274452072 AS base-cli
+FROM registry.redhat.io/ubi9/ubi:9.7 AS base-cli
 ENV GRPC_DNS_RESOLVER=native
 ENTRYPOINT ["python3", "-m", "control.cli"]
 CMD []
@@ -41,7 +41,7 @@ FROM base-$NVMEOF_TARGET AS python-intermediate
 RUN \
     --mount=type=cache,target=/var/cache/dnf \
     --mount=type=cache,target=/var/lib/dnf \
-    dnf update -y --allowerasing --nobest
+    dnf upgrade -y openssl openssl-libs openssl-fips-provider --allowerasing
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONIOENCODING=UTF-8 \
