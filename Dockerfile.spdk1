@@ -2,7 +2,6 @@
 # vim: syntax=dockerfile
 
 ARG DNF_OPTS="\
-  --enablerepo crb \
   --nobest \
   --nodocs \
   --setopt=install_weak_deps=0 \
