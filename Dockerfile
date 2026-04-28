@@ -38,7 +38,7 @@ FROM base-$NVMEOF_TARGET AS python-intermediate
 RUN \
     --mount=type=cache,target=/var/cache/dnf \
     --mount=type=cache,target=/var/lib/dnf \
-    dnf update -y --exclude=openssl-fips-provider
+    dnf upgrade -y openssl openssl-libs openssl-fips-provider --allowerasing
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONIOENCODING=UTF-8 \
