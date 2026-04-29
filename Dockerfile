@@ -6,7 +6,7 @@ ARG SPDK_IMAGE \
 
 #------------------------------------------------------------------------------
 # Base image for NVMEOF_TARGET=cli (nvmeof-cli)
-FROM registry.redhat.io/ubi9/ubi:9.7 AS base-cli
+FROM registry.redhat.io/ubi10/ubi:latest AS base-cli
 ENV GRPC_DNS_RESOLVER=native
 ENTRYPOINT ["python3", "-m", "control.cli"]
 CMD []
@@ -22,7 +22,7 @@ WORKDIR ${REMOTE_SOURCES_DIR}/${REMOTE_SOURCES}/app
 
 RUN --mount=type=secret,id=org-id --mount=type=secret,id=activation-key subscription-manager register --activationkey=$(cat /run/secrets/activation-key) --org=$(cat /run/secrets/org-id)
 
-RUN subscription-manager repos --enable=codeready-builder-for-rhel-9-$(arch)-rpms
+RUN subscription-manager repos --enable=codeready-builder-for-rhel-10-$(arch)-rpms
 
 RUN dnf install -y python3-rados python3-rbd gdb ceph-mon-client-nvmeof librbd1 --nobest --allowerasing
 
