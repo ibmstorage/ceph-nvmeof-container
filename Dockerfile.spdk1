@@ -89,8 +89,7 @@ RUN \
     && dnf install $DNF_OPTS -y \
         rpm-build \
         git-core \
-	epel-release \
-	epel-next-release \
+	&& dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm \
     && scripts/pkgdep.sh $SPDK_PKGDEP_ARGS \
     && dnf $DNF_OPTS update -y
 
