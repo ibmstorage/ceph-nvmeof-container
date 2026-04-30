@@ -141,7 +141,7 @@ RUN \
 RUN \
     --mount=type=cache,target=/root/.cache/pip \
     pip install -U pip wheel \
-    pip install setuptools==81.0.0
+    && pip install setuptools==81.0.0
 
 RUN \
     --mount=type=cache,target=/root/.cache/pip \
