@@ -146,7 +146,8 @@ COPY pyproject.toml pdm.lock pdm.toml ./
 
 RUN \
     --mount=type=cache,target=/root/.cache/pdm \
-    PDM_INSTALL_MAX_WORKERS=1 pdm install -v --no-self --no-editable
+    pip install setuptools && \
+    PDM_INSTALL_MAX_WORKERS=1 pdm install -v --no-self --no-editable --no-isolation
 
 COPY . .
 COPY ceph-nvmeof.conf /src/
