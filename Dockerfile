@@ -129,17 +129,16 @@ ARG PDM_VERSION=2.22.3
 RUN \
     --mount=type=cache,target=/var/cache/dnf \
     --mount=type=cache,target=/var/lib/dnf \
-    dnf install -y python3-pip gcc gcc-c++ python3-devel
+    dnf install -y python3-pip gcc gcc-c++ python3-devel curl
 
-# Create a private venv for PDM so it doesn't break the system argparse or hishel
-RUN python3 -m venv /opt/pdm-venv && \
-    /opt/pdm-venv/bin/pip install -U pip setuptools wheel && \
-    /opt/pdm-venv/bin/pip install pdm==$PDM_VERSION
+RUN curl -sSL https://pdm-project.org/install-pdm.py | python3 - --version $PDM_VERSION
 
 # Add the PDM venv to the PATH
-ENV PATH="/opt/pdm-venv/bin:$PATH"
+ENV PATH="/root/.local/bin:$PATH"
 ENV PDM_CHECK_UPDATE=0
 
+# Force PDM to use the system interpreter rather than trying to create another venv
+ENV PDM_USE_VENV=0
 #------------------------------------------------------------------------------
 FROM builder-base AS builder
 
@@ -147,7 +146,7 @@ COPY pyproject.toml pdm.lock pdm.toml ./
 
 RUN \
     --mount=type=cache,target=/root/.cache/pdm \
-    pdm install -v --no-self --no-editable
+    pdm install -v --parallel=1 --no-self --no-editable
 
 COPY . .
 COPY ceph-nvmeof.conf /src/
