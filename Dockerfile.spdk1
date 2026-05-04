@@ -201,9 +201,10 @@ RUN \
     #          $SPDK_CENTOS_BASE/centos-gpg-keys-$SPDK_CENTOS_REPO_VER.noarch.rpm \
     # && rpm -vih https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm \
     dnf $DNF_OPTS install -y dnf-plugins-core \
-    && rpm -ivh https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm \
-    && (dnf config-manager --set-enabled crb || true) \
+    && rpm -ivh https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm \ 
+    && dnf config-manager --set-enabled ubi-10-for-x86_64-codeready-builder-rpms \
     && rpm -ivh /accel-rpms/$(uname -m)/accel-config-libs-[0-9]*.rpm /accel-rpms/$(uname -m)/accel-config-[0-9]*.rpm \
+    && dnf $DNF_OPTS install -y libnbd \
     && dnf $DNF_OPTS install -y /rpm/$(uname -m)/*.rpm --exclude=openssl-fips-provider \
     && dnf $DNF_OPTS update -y --exclude=openssl-fips-provider
 
