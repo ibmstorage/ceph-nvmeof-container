@@ -24,7 +24,7 @@ RUN --mount=type=secret,id=org-id --mount=type=secret,id=activation-key subscrip
 
 RUN subscription-manager repos --enable=codeready-builder-for-rhel-10-$(arch)-rpms
 
-RUN dnf install -y python3-rados python3-rbd gdb ceph-mon-client-nvmeof librbd1 --nobest --allowerasing
+RUN dnf install -y python3-rados python3-rbd gdb ceph-mon-client-nvmeof librbd1 dnf-plugins-core openssl --nobest --allowerasing
 
 RUN mkdir -p /src
 
@@ -124,33 +124,36 @@ WORKDIR $APPDIR
 
 #------------------------------------------------------------------------------
 FROM python-intermediate AS builder-base
-ARG PDM_VERSION=2.22.3
+ARG PDM_VERSION=2.26.8 \
+    PDM_INSTALL_CMD=sync \
+    PDM_INSTALL_FLAGS="-v --no-isolation --no-self --no-editable" \
+    PDM_INSTALL_DEV="--dev"
+ENV PDM_INSTALL_FLAGS="$PDM_INSTALL_FLAGS $PDM_INSTALL_DEV"
 
+ENV PDM_CHECK_UPDATE=0
+
+# https://pdm.fming.dev/latest/usage/advanced/#use-pdm-in-a-multi-stage-dockerfile
 RUN \
     --mount=type=cache,target=/var/cache/dnf \
     --mount=type=cache,target=/var/lib/dnf \
-    dnf install -y python3-pip gcc gcc-c++ python3-devel curl
+    dnf install -y python3-pip gcc gcc-c++ python3-devel libffi-devel git
+RUN \
+    --mount=type=cache,target=/root/.cache/pip \
+    pip install -U pip "setuptools<82" wheel
 
-RUN curl -sSL https://pdm-project.org/install-pdm.py | python3 - --version $PDM_VERSION
+RUN \
+    --mount=type=cache,target=/root/.cache/pip \
+    pip install pdm==$PDM_VERSION
 
-# Add the PDM venv to the PATH
-ENV PATH="/root/.local/bin:$PATH"
-ENV PDM_CHECK_UPDATE=0
-
-# Force PDM to use the system interpreter rather than trying to create another venv
-ENV PDM_USE_VENV=0
 #------------------------------------------------------------------------------
 FROM builder-base AS builder
 
 COPY pyproject.toml pdm.lock pdm.toml ./
-
 RUN \
     --mount=type=cache,target=/root/.cache/pdm \
-    pip install setuptools && \
-    PDM_INSTALL_MAX_WORKERS=1 pdm install --no-lock --no-self --no-editable --no-isolation
+    pdm "$PDM_INSTALL_CMD" $PDM_INSTALL_FLAGS
 
 COPY . .
-COPY ceph-nvmeof.conf /src/
 RUN pdm run protoc
 
 #------------------------------------------------------------------------------
