@@ -46,7 +46,7 @@ ENV PYTHONUNBUFFERED=1 \
     LANG=C.UTF-8 \
     PIP_NO_CACHE_DIR=off \
     PYTHON_MAJOR=3 \
-    PYTHON_MINOR=9 \
+    PYTHON_MINOR=12 \
     PDM_PREFER_BINARY=:all:
 
 ARG APPDIR=/src
@@ -124,7 +124,7 @@ WORKDIR $APPDIR
 
 #------------------------------------------------------------------------------
 FROM python-intermediate AS builder-base
-ARG PDM_VERSION=2.17.3 \
+ARG PDM_VERSION=2.22.3 \
     PDM_INSTALL_CMD=install \
     PDM_INSTALL_FLAGS="-v --no-isolation --no-self --no-editable" \
     PDM_INSTALL_DEV=""
@@ -140,10 +140,7 @@ RUN \
     dnf install -y gcc gcc-c++ python3-devel
 RUN \
     --mount=type=cache,target=/root/.cache/pip \
-    pip install -U pip wheel \
-    && pip install --no-cache-dir \
-       "setuptools==81.0.0" \
-       "packaging<24.0"
+    pip install -U pip setuptools wheel
 
 RUN \
     --mount=type=cache,target=/root/.cache/pip \
@@ -153,6 +150,9 @@ RUN \
 FROM builder-base AS builder
 
 COPY pyproject.toml pdm.lock pdm.toml ./
+
+RUN pip install --force-reinstall --ignore-installed pdm==2.22.3
+
 RUN \
     --mount=type=cache,target=/root/.cache/pdm \
     pdm install -v --no-isolation --no-self --no-editable
