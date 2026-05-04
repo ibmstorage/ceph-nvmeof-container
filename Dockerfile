@@ -124,38 +124,30 @@ WORKDIR $APPDIR
 
 #------------------------------------------------------------------------------
 FROM python-intermediate AS builder-base
-ARG PDM_VERSION=2.22.3 \
-    PDM_INSTALL_CMD=install \
-    PDM_INSTALL_FLAGS="-v --no-isolation --no-self --no-editable" \
-    PDM_INSTALL_DEV=""
-ENV PDM_INSTALL_FLAGS="$PDM_INSTALL_FLAGS $PDM_INSTALL_DEV"
+ARG PDM_VERSION=2.22.3
 
-ENV PDM_CHECK_UPDATE=0
-
-# https://pdm.fming.dev/latest/usage/advanced/#use-pdm-in-a-multi-stage-dockerfile
 RUN \
     --mount=type=cache,target=/var/cache/dnf \
     --mount=type=cache,target=/var/lib/dnf \
-    dnf install -y python3-pip && \
-    dnf install -y gcc gcc-c++ python3-devel
-RUN \
-    --mount=type=cache,target=/root/.cache/pip \
-    pip install -U pip setuptools wheel
+    dnf install -y python3-pip gcc gcc-c++ python3-devel
 
-RUN \
-    --mount=type=cache,target=/root/.cache/pip \
-    pip install pdm==$PDM_VERSION
+# Create a private venv for PDM so it doesn't break the system argparse or hishel
+RUN python3 -m venv /opt/pdm-venv && \
+    /opt/pdm-venv/bin/pip install -U pip setuptools wheel && \
+    /opt/pdm-venv/bin/pip install pdm==$PDM_VERSION
+
+# Add the PDM venv to the PATH
+ENV PATH="/opt/pdm-venv/bin:$PATH"
+ENV PDM_CHECK_UPDATE=0
 
 #------------------------------------------------------------------------------
 FROM builder-base AS builder
 
 COPY pyproject.toml pdm.lock pdm.toml ./
 
-RUN pip install --force-reinstall --ignore-installed pdm==2.22.3
-
 RUN \
     --mount=type=cache,target=/root/.cache/pdm \
-    pdm install -v --no-isolation --no-self --no-editable
+    pdm install -v --no-self --no-editable
 
 COPY . .
 COPY ceph-nvmeof.conf /src/
