@@ -11,7 +11,7 @@ ARG DNF_OPTS="\
   "
 ARG ACCEL_CONFIG_SRC="/accel-config"
 
-FROM quay.io/centos/centos:stream10 AS build
+FROM quay.io/rockylinux/rockylinux:10 AS build
 
 ARG SPDK_CEPH_VERSION \
     CEPH_CLUSTER_CEPH_REPO_BASEURL \
@@ -84,12 +84,13 @@ RUN \
     # rpm --import https://www.elrepo.org/RPM-GPG-KEY-elrepo.org \
     # && rpm --import https://www.elrepo.org/RPM-GPG-KEY-v2-elrepo.org \
     dnf install -y $DNF_OPTS -y 'dnf-command(config-manager)' \
-    # && yum install -y https://www.elrepo.org/elrepo-release-10.el10.elrepo.noarch.rpm \
+    && yum install -y --nogpgcheck https://www.elrepo.org/elrepo-release-10.el10.elrepo.noarch.rpm \
     && dnf config-manager --set-enabled crb \
     && dnf install $DNF_OPTS -y \
         rpm-build \
         git-core \
-	&& dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm \
+    epel-release \
+	# && dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm \
     && scripts/pkgdep.sh $SPDK_PKGDEP_ARGS \
     && dnf $DNF_OPTS update -y
 
@@ -138,9 +139,11 @@ ARG SPDK_CEPH_VERSION \
     SPDK_VERSION \
     DNF_OPTS
 
-ARG SPDK_CENTOS_BASE="https://mirror.stream.centos.org/10-stream/BaseOS/x86_64/os/Packages/"
+# ARG SPDK_CENTOS_BASE="https://mirror.stream.centos.org/10-stream/BaseOS/x86_64/os/Packages/"
+ARG SPDK_ROCKY_BASE="https://dl.rockylinux.org/pub/rocky/10/BaseOS/x86_64/os/Packages/r/"
 # This would become obsolete as the release rolls out new packages
-ARG SPDK_CENTOS_REPO_VER=10.0-21.el10
+# ARG SPDK_CENTOS_REPO_VER=10.0-21.el10
+ARG SPDK_ROCKY_REPO_VER="10.1-1.5.el10"
 
 ARG SPDK_PKGDEP_ARGS \
     SPDK_CONFIGURE_ARGS \
@@ -180,19 +183,28 @@ LABEL io.spdk.version="$SPDK_VERSION" \
       io.spdk.git.commit="$SPDK_GIT_COMMIT"
 
 # CentOS-specific labels
-LABEL org.centos.url="$SPDK_CENTOS_BASE" \
-      org.centos.version="$SPDK_CENTOS_REPO_VER"
+# LABEL org.centos.url="$SPDK_CENTOS_BASE" \
+#       org.centos.version="$SPDK_CENTOS_REPO_VER"
+
+# Rocky Linux-specific labels
+LABEL org.rockylinux.url="$SPDK_ROCKY_BASE" \
+      org.rockylinux.version="$SPDK_ROCKY_REPO_VER"
 
 COPY --from=build /etc/yum.conf /etc/yum.conf
 COPY --from=build /etc/yum.repos.d/ceph.repo /etc/yum.repos.d/ceph.repo
 
 RUN \
     --mount=type=bind,from=build,source=/root/rpmbuild/rpm,target=/rpm \
+    --mount=type=bind,from=build,source=/root/rpmbuild/RPMS,target=/accel-rpms \
     --mount=type=cache,target=/var/cache/dnf \
     --mount=type=cache,target=/var/lib/dnf \
-    rpm -vih $SPDK_CENTOS_BASE/centos-stream-repos-$SPDK_CENTOS_REPO_VER.noarch.rpm \
-             $SPDK_CENTOS_BASE/centos-gpg-keys-$SPDK_CENTOS_REPO_VER.noarch.rpm \
-    && rpm -vih https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm \
+    # rpm -vih $SPDK_CENTOS_BASE/centos-stream-repos-$SPDK_CENTOS_REPO_VER.noarch.rpm \
+    #          $SPDK_CENTOS_BASE/centos-gpg-keys-$SPDK_CENTOS_REPO_VER.noarch.rpm \
+    # && rpm -vih https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm \
+    dnf $DNF_OPTS install -y dnf-plugins-core \
+    && rpm -ivh https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm \
+    && dnf config-manager --set-enabled crb \
+    && rpm -ivh /accel-rpms/$(uname -m)/accel-config-libs-[0-9]*.rpm /accel-rpms/$(uname -m)/accel-config-[0-9]*.rpm \
     && dnf $DNF_OPTS install -y /rpm/$(uname -m)/*.rpm --exclude=openssl-fips-provider \
     && dnf $DNF_OPTS update -y --exclude=openssl-fips-provider
 
