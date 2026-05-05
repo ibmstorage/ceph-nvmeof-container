@@ -164,4 +164,18 @@ COPY --from=builder /src /src
 
 ENV PYTHONPATH=/src:$PYTHONPATH
 
+RUN --mount=type=bind,from=build,source=/root/rpmbuild/RPMS,target=/rpms \
+    --mount=type=cache,target=/var/cache/dnf \
+    --mount=type=cache,target=/var/lib/dnf \
+    dnf install -y \
+        /rpms/x86_64/spdk-25.09-0.x86_64.rpm \
+        /rpms/x86_64/spdk-devel-25.09-0.x86_64.rpm \
+        /rpms/x86_64/spdk-scripts-25.09-0.x86_64.rpm \
+        --nogpgcheck \
+        --setopt=install_weak_deps=0 \
+        --allowerasing \
+        --best
+
+RUN rpm -qa | grep -i spdk
+
 RUN subscription-manager unregister || true
