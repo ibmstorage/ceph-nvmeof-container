@@ -190,18 +190,50 @@ RUN \
     --mount=type=bind,from=build,source=/root/rpmbuild/RPMS,target=/accel-rpms \
     --mount=type=cache,target=/var/cache/dnf \
     --mount=type=cache,target=/var/lib/dnf \
-    --mount=type=secret,id=org-id --mount=type=secret,id=activation-key subscription-manager register --activationkey=$(cat /run/secrets/activation-key) --org=$(cat /run/secrets/org-id) \
+    --mount=type=secret,id=org-id \
+    --mount=type=secret,id=activation-key \
+    subscription-manager register \
+        --activationkey=$(cat /run/secrets/activation-key) \
+        --org=$(cat /run/secrets/org-id) \
     && subscription-manager repos \
         --enable=rhel-10-for-x86_64-baseos-rpms \
         --enable=rhel-10-for-x86_64-appstream-rpms \
         --enable=codeready-builder-for-rhel-10-$(arch)-rpms \
-    && dnf $DNF_OPTS install -y dnf-plugins-core libnbd \
-    # rpm -vih $SPDK_CENTOS_BASE/centos-stream-repos-$SPDK_CENTOS_REPO_VER.noarch.rpm \
-    #          $SPDK_CENTOS_BASE/centos-gpg-keys-$SPDK_CENTOS_REPO_VER.noarch.rpm \
-    # && rpm -vih https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm \
-    && rpm -ivh /accel-rpms/$(uname -m)/accel-config-libs-[0-9]*.rpm /accel-rpms/$(uname -m)/accel-config-[0-9]*.rpm \
-    && dnf $DNF_OPTS install -y /rpm/$(uname -m)/*.rpm --exclude=openssl-fips-provider \
-    && dnf $DNF_OPTS update -y --exclude=openssl-fips-provider \
+    \
+    # Debug RPM presence
+    && echo "==== SPDK RPMs ====" \
+    && ls -l /rpm/$(uname -m) \
+    \
+    # Install base deps
+    && dnf install -y \
+        dnf-plugins-core \
+        libnbd \
+        libaio \
+        numactl \
+        libuuid \
+        json-c \
+        zlib \
+        openssl \
+        rdma-core \
+        --setopt=install_weak_deps=0 \
+    \
+    # Install accel-config first
+    && rpm -ivh /accel-rpms/$(uname -m)/accel-config-libs-*.rpm \
+                 /accel-rpms/$(uname -m)/accel-config-*.rpm \
+    \
+    # Install SPDK RPMs (STRICT)
+    && dnf install -y /rpm/$(uname -m)/*.rpm \
+        --nogpgcheck \
+        --setopt=install_weak_deps=0 \
+        --allowerasing \
+        --best \
+        -v \
+    \
+    # Verify installation
+    && rpm -qa | grep spdk || (echo "SPDK NOT INSTALLED" && exit 1) \
+    \
+    && dnf update -y --exclude=openssl-fips-provider \
+    \
     && subscription-manager unregister \
     && subscription-manager clean
 
