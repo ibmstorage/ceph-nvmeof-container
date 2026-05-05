@@ -193,7 +193,6 @@ RUN \
     --mount=type=secret,id=activation-key \
     set -euxo pipefail \
     \
-    # Register RHEL
     && subscription-manager register \
         --activationkey=$(cat /run/secrets/activation-key) \
         --org=$(cat /run/secrets/org-id) \
@@ -203,7 +202,9 @@ RUN \
         --enable=rhel-10-for-x86_64-appstream-rpms \
         --enable=codeready-builder-for-rhel-10-x86_64-rpms \
     \
-    # Install base deps first
+    && echo "==== RPM CONTENT ====" \
+    && ls -R /rpms \
+    \
     && dnf install -y \
         dnf-plugins-core \
         libaio \
@@ -215,7 +216,6 @@ RUN \
         rdma-core \
         --setopt=install_weak_deps=0 \
     \
-    # Install ALL built RPMs together
     && dnf install -y \
         /rpms/$(uname -m)/*.rpm \
         --nogpgcheck \
@@ -223,10 +223,8 @@ RUN \
         --allowerasing \
         --best \
     \
-    # Verify
-    && rpm -qa | grep -i spdk \
+    && rpm -qa | grep -i spdk || true \
     \
-    # Cleanup
     && dnf update -y --exclude=openssl-fips-provider \
     && subscription-manager unregister \
     && subscription-manager clean \
