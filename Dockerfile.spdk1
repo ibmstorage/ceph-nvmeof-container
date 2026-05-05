@@ -186,15 +186,14 @@ COPY --from=build /etc/yum.conf /etc/yum.conf
 COPY --from=build /etc/yum.repos.d/ceph.repo /etc/yum.repos.d/ceph.repo
 
 RUN \
-    --mount=type=bind,from=build,source=/root/rpmbuild/rpm,target=/rpm \
-    --mount=type=bind,from=build,source=/root/rpmbuild/RPMS,target=/accel-rpms \
+    --mount=type=bind,from=build,source=/root/rpmbuild/RPMS,target=/rpms \
     --mount=type=cache,target=/var/cache/dnf \
     --mount=type=cache,target=/var/lib/dnf \
     --mount=type=secret,id=org-id \
     --mount=type=secret,id=activation-key \
     set -euxo pipefail \
     \
-  
+    # Register RHEL
     && subscription-manager register \
         --activationkey=$(cat /run/secrets/activation-key) \
         --org=$(cat /run/secrets/org-id) \
@@ -204,17 +203,9 @@ RUN \
         --enable=rhel-10-for-x86_64-appstream-rpms \
         --enable=codeready-builder-for-rhel-10-x86_64-rpms \
     \
-  
-    && echo "==== SPDK RPMs ====" \
-    && ls -l /rpm/$(uname -m) \
-    && echo "==== ACCEL RPMs ====" \
-    && ls -l /accel-rpms/$(uname -m) \
-    \
-  
+    # Install base deps first
     && dnf install -y \
         dnf-plugins-core \
-        pkgconf-pkg-config \
-        libnbd \
         libaio \
         numactl \
         libuuid \
@@ -224,31 +215,19 @@ RUN \
         rdma-core \
         --setopt=install_weak_deps=0 \
     \
-  
+    # Install ALL built RPMs together
     && dnf install -y \
-        /accel-rpms/$(uname -m)/accel-config-libs-[0-9]*.rpm \
-        /accel-rpms/$(uname -m)/accel-config-[0-9]*.rpm \
-        --nogpgcheck \
-        --setopt=install_weak_deps=0 \
-    \
-    # sanity check
-    && rpm -qa | grep accel-config \
-    \
-
-    && dnf install -y \
-        /rpm/$(uname -m)/*.rpm \
+        /rpms/$(uname -m)/*.rpm \
         --nogpgcheck \
         --setopt=install_weak_deps=0 \
         --allowerasing \
         --best \
     \
-    # verify SPDK installed
+    # Verify
     && rpm -qa | grep -i spdk \
     \
-    
+    # Cleanup
     && dnf update -y --exclude=openssl-fips-provider \
-    \
-
     && subscription-manager unregister \
     && subscription-manager clean \
     && dnf clean all
