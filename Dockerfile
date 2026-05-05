@@ -139,11 +139,11 @@ RUN \
     dnf install -y python3-pip gcc gcc-c++ python3-devel libffi-devel git
 RUN \
     --mount=type=cache,target=/root/.cache/pip \
-    pip install -U pip "setuptools<82" wheel
+    pip install -U "pip<25" "setuptools<82" wheel
 
 RUN \
     --mount=type=cache,target=/root/.cache/pip \
-    pip install pdm==$PDM_VERSION
+    pip install --ignore-installed pdm==$PDM_VERSION
 
 #------------------------------------------------------------------------------
 FROM builder-base AS builder
