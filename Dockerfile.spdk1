@@ -192,19 +192,26 @@ RUN \
     --mount=type=cache,target=/var/lib/dnf \
     --mount=type=secret,id=org-id \
     --mount=type=secret,id=activation-key \
-    subscription-manager register \
+    set -euxo pipefail \
+    \
+    # Register
+    && subscription-manager register \
         --activationkey=$(cat /run/secrets/activation-key) \
         --org=$(cat /run/secrets/org-id) \
+    \
+    # Enable correct repos (NO $(arch))
     && subscription-manager repos \
         --enable=rhel-10-for-x86_64-baseos-rpms \
         --enable=rhel-10-for-x86_64-appstream-rpms \
-        --enable=codeready-builder-for-rhel-10-$(arch)-rpms \
+        --enable=codeready-builder-for-rhel-10-x86_64-rpms \
     \
     # Debug RPM presence
     && echo "==== SPDK RPMs ====" \
     && ls -l /rpm/$(uname -m) \
+    && echo "==== ACCEL RPMs ====" \
+    && ls -l /accel-rpms/$(uname -m) \
     \
-    # Install base deps
+    # Install base dependencies (INCLUDING pkg-config fix)
     && dnf install -y \
         dnf-plugins-core \
         libnbd \
@@ -215,27 +222,34 @@ RUN \
         zlib \
         openssl \
         rdma-core \
+        pkgconf-pkg-config \
         --setopt=install_weak_deps=0 \
     \
-    # Install accel-config first
-    && rpm -ivh /accel-rpms/$(uname -m)/accel-config-libs-*.rpm \
-                 /accel-rpms/$(uname -m)/accel-config-*.rpm \
+    # Install accel-config (FILTER OUT -devel, debuginfo etc.)
+    && dnf install -y \
+        /accel-rpms/$(uname -m)/accel-config-libs-*.rpm \
+        /accel-rpms/$(uname -m)/accel-config-[0-9]*.rpm \
+        --nogpgcheck \
+        --setopt=install_weak_deps=0 \
     \
-    # Install SPDK RPMs (STRICT)
-    && dnf install -y /rpm/$(uname -m)/*.rpm \
+    # Install SPDK RPMs (let dnf resolve deps properly)
+    && dnf install -y \
+        /rpm/$(uname -m)/*.rpm \
         --nogpgcheck \
         --setopt=install_weak_deps=0 \
         --allowerasing \
         --best \
-        -v \
     \
     # Verify installation
-    && rpm -qa | grep spdk || (echo "SPDK NOT INSTALLED" && exit 1) \
+    && rpm -qa | grep -i spdk \
     \
+    # Update (safe)
     && dnf update -y --exclude=openssl-fips-provider \
     \
+    # Cleanup
     && subscription-manager unregister \
-    && subscription-manager clean
+    && subscription-manager clean \
+    && dnf clean all
 
 ENTRYPOINT [ "/usr/local/bin/nvmf_tgt" ]
 CMD [ "-u", "-r", "/var/tmp/spdk.sock" ]
