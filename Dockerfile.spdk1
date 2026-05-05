@@ -137,9 +137,9 @@ ARG SPDK_CEPH_VERSION \
     SPDK_VERSION \
     DNF_OPTS
 
-ARG SPDK_CENTOS_BASE="https://mirror.stream.centos.org/10-stream/BaseOS/x86_64/os/Packages/"
+ARG SPDK_ROCKY_BASE="https://dl.rockylinux.org/pub/rocky/10/BaseOS/x86_64/os/Packages/r/"
 # This would become obsolete as the release rolls out new packages
-ARG SPDK_CENTOS_REPO_VER=10.0-21.el10
+ARG SPDK_ROCKY_REPO_VER="10.1-1.5.el10"
 
 ARG SPDK_PKGDEP_ARGS \
     SPDK_CONFIGURE_ARGS \
@@ -178,9 +178,9 @@ LABEL io.spdk.version="$SPDK_VERSION" \
       io.spdk.git.branch="$SPDK_GIT_BRANCH" \
       io.spdk.git.commit="$SPDK_GIT_COMMIT"
 
-# CentOS-specific labels
-LABEL org.centos.url="$SPDK_CENTOS_BASE" \
-      org.centos.version="$SPDK_CENTOS_REPO_VER"
+# Rocky Linux-specific labels
+LABEL org.rockylinux.url="$SPDK_ROCKY_BASE" \
+      org.rockylinux.version="$SPDK_ROCKY_REPO_VER"
 
 COPY --from=build /etc/yum.conf /etc/yum.conf
 COPY --from=build /etc/yum.repos.d/ceph.repo /etc/yum.repos.d/ceph.repo
@@ -190,15 +190,20 @@ RUN \
     --mount=type=bind,from=build,source=/root/rpmbuild/RPMS,target=/accel-rpms \
     --mount=type=cache,target=/var/cache/dnf \
     --mount=type=cache,target=/var/lib/dnf \
-    dnf $DNF_OPTS install -y dnf-plugins-core \
-    && dnf config-manager --add-repo https://dl.rockylinux.org/pub/rocky/10/AppStream/x86_64/os/ \
-    && dnf install -y --nogpgcheck libnbd \
+    --mount=type=secret,id=org-id --mount=type=secret,id=activation-key subscription-manager register --activationkey=$(cat /run/secrets/activation-key) --org=$(cat /run/secrets/org-id) \
+    && subscription-manager repos \
+        --enable=rhel-10-for-x86_64-baseos-rpms \
+        --enable=rhel-10-for-x86_64-appstream-rpms \
+        --enable=codeready-builder-for-rhel-10-$(arch)-rpms \
+    && dnf $DNF_OPTS install -y dnf-plugins-core libnbd \
     # rpm -vih $SPDK_CENTOS_BASE/centos-stream-repos-$SPDK_CENTOS_REPO_VER.noarch.rpm \
     #          $SPDK_CENTOS_BASE/centos-gpg-keys-$SPDK_CENTOS_REPO_VER.noarch.rpm \
-    && rpm -vih https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm \
+    # && rpm -vih https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm \
     && rpm -ivh /accel-rpms/$(uname -m)/accel-config-libs-[0-9]*.rpm /accel-rpms/$(uname -m)/accel-config-[0-9]*.rpm \
-    && dnf $DNF_OPTS install -y --nogpgcheck /rpm/$(uname -m)/*.rpm --exclude=openssl-fips-provider \
-    && dnf $DNF_OPTS update -y --exclude=openssl-fips-provider
+    && dnf $DNF_OPTS install -y /rpm/$(uname -m)/*.rpm --exclude=openssl-fips-provider \
+    && dnf $DNF_OPTS update -y --exclude=openssl-fips-provider \
+    && subscription-manager unregister \
+    && subscription-manager clean
 
 ENTRYPOINT [ "/usr/local/bin/nvmf_tgt" ]
 CMD [ "-u", "-r", "/var/tmp/spdk.sock" ]
