@@ -194,24 +194,23 @@ RUN \
     --mount=type=secret,id=activation-key \
     set -euxo pipefail \
     \
-    # Register
+    # Register RHEL
     && subscription-manager register \
         --activationkey=$(cat /run/secrets/activation-key) \
         --org=$(cat /run/secrets/org-id) \
     \
-    # Enable correct repos (NO $(arch))
     && subscription-manager repos \
         --enable=rhel-10-for-x86_64-baseos-rpms \
         --enable=rhel-10-for-x86_64-appstream-rpms \
         --enable=codeready-builder-for-rhel-10-x86_64-rpms \
     \
-    # Debug RPM presence
+    # Debug visibility
     && echo "==== SPDK RPMs ====" \
     && ls -l /rpm/$(uname -m) \
     && echo "==== ACCEL RPMs ====" \
     && ls -l /accel-rpms/$(uname -m) \
     \
-    # Install base dependencies (INCLUDING pkg-config fix)
+    # Base dependencies
     && dnf install -y \
         dnf-plugins-core \
         libnbd \
@@ -225,14 +224,16 @@ RUN \
         pkgconf-pkg-config \
         --setopt=install_weak_deps=0 \
     \
-    # Install accel-config (FILTER OUT -devel, debuginfo etc.)
+    # Install ONLY required accel-config RPMs (NO debuginfo!)
     && dnf install -y \
         /accel-rpms/$(uname -m)/accel-config-libs-*.rpm \
         /accel-rpms/$(uname -m)/accel-config-[0-9]*.rpm \
+        --exclude="*debuginfo*" \
+        --exclude="*debugsource*" \
         --nogpgcheck \
         --setopt=install_weak_deps=0 \
     \
-    # Install SPDK RPMs (let dnf resolve deps properly)
+    # Install SPDK
     && dnf install -y \
         /rpm/$(uname -m)/*.rpm \
         --nogpgcheck \
@@ -240,13 +241,12 @@ RUN \
         --allowerasing \
         --best \
     \
-    # Verify installation
+    # Verify
     && rpm -qa | grep -i spdk \
     \
-    # Update (safe)
+    # Final cleanup/update
     && dnf update -y --exclude=openssl-fips-provider \
     \
-    # Cleanup
     && subscription-manager unregister \
     && subscription-manager clean \
     && dnf clean all
