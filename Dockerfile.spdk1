@@ -143,42 +143,34 @@ ARG DNF_OPTS
 
 COPY --from=build /etc/yum.repos.d/ceph.repo /etc/yum.repos.d/ceph.repo
 
-RUN --mount=type=bind,from=build,source=/root/rpmbuild/RPMS,target=/rpm \
-    --mount=type=cache,target=/var/cache/dnf \
+RUN --mount=type=cache,target=/var/cache/dnf \
     --mount=type=cache,target=/var/lib/dnf \
-    --mount=type=secret,id=org-id \
-    --mount=type=secret,id=activation-key \
     set -euxo pipefail \
-    \
-    && subscription-manager register \
-        --activationkey=$(cat /run/secrets/activation-key) \
-        --org=$(cat /run/secrets/org-id) \
-    \
-    && subscription-manager repos \
-        --enable=rhel-10-for-x86_64-baseos-rpms \
-        --enable=rhel-10-for-x86_64-appstream-rpms \
-        --enable=codeready-builder-for-rhel-10-x86_64-rpms \
     \
     && dnf install -y \
         pkgconf-pkg-config \
         libnbd libaio numactl libuuid json-c zlib openssl rdma-core \
-        --setopt=install_weak_deps=0 \
     \
-    && dnf install -y /rpm/$(uname -m)/*.rpm \
+    && dnf clean all \
+    && rm -rf /var/cache/dnf /var/lib/dnf
+
+COPY --from=build /root/rpmbuild/RPMS /tmp/rpms
+
+RUN set -euxo pipefail \
+    \
+    && rm -rf /var/lib/rpm/__db* || true \
+    && rpm --rebuilddb || true \
+    \
+    && dnf install -y /tmp/rpms/$(uname -m)/*.rpm \
         --nogpgcheck \
         --setopt=install_weak_deps=0 \
     \
-
-    && rpm -qa > /tmp/rpm_list.txt \
-    && tail -n 50 /tmp/rpm_list.txt \
+    && rpm -qa | head -50 \
     \
-    && dnf clean all \
-    \
-    && subscription-manager unregister || true
+    && rm -rf /tmp/rpms
 
-ENTRYPOINT [ "/usr/local/bin/nvmf_tgt" ]
-CMD [ "-u", "-r", "/var/tmp/spdk.sock" ]
-
+ENTRYPOINT ["/usr/local/bin/nvmf_tgt"]
+CMD ["-u", "-r", "/var/tmp/spdk.sock"]
 #------------------------------------------------------------------------------
 FROM spdk AS bdevperf
 
