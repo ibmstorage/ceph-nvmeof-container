@@ -82,6 +82,8 @@ RUN \
         librados-devel \
         librbd-devel \
         python3-devel \
+        fuse3 \
+        fuse3-devel \
         --setopt=install_weak_deps=0 \
     \
     && DEPS="no" \
