@@ -176,10 +176,10 @@ ENV BDEVPERF_TEST_DURATION="90" \
     BDEVPERF_IO_TYPE="verify" \
     BDEVPERF_CORE_LIST="0"
 
-RUN mkdir -p /usr/local/bin
-COPY --from=build /src/build/bin/bdevperf* /usr/local/bin/bdevperf || \
-    COPY --from=build /src/examples/bdev/bdevperf/bdevperf* /usr/local/bin/bdevperf
+COPY --from=build /src/build/examples/bdevperf /usr/local/bin/bdevperf
+
+COPY --from=build /src/examples/bdev/bdevperf/bdevperf.py /usr/libexec/spdk/scripts/bdevperf.py
 
 RUN chmod +x /usr/local/bin/bdevperf
 
-ENTRYPOINT ["/usr/local/bin/bdevperf"]
+ENTRYPOINT [ "/entrypoint" ]
