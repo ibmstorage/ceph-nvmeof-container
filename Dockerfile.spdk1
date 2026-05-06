@@ -167,13 +167,12 @@ COPY --from=build /root/rpmbuild/RPMS /tmp/rpms
 RUN set -euxo pipefail \
     \
     && rm -f /var/lib/rpm/__db* || true \
-    && rpm --rebuilddb \
     \
     && dnf install -y /tmp/rpms/$(uname -m)/*.rpm \
         --nogpgcheck \
         --setopt=install_weak_deps=0 \
     \
-    && rpm -qa | head -50 \
+    && rpm -qa --last | head -n 50 || true \
     \
     && rm -rf /tmp/rpms
 
