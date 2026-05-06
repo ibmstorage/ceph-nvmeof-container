@@ -143,36 +143,30 @@ ARG DNF_OPTS
 
 COPY --from=build /etc/yum.repos.d/ceph.repo /etc/yum.repos.d/ceph.repo
 
+RUN set -eux; \
+    dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm || \
+    echo "EPEL 10 not yet available, proceeding with caution"
+
 RUN --mount=type=cache,target=/var/cache/dnf \
     --mount=type=cache,target=/var/lib/dnf \
     set -euxo pipefail \
-    \
-    && dnf clean all \
-    \
     && dnf install -y \
-        pkgconf-pkg-config \
-        libaio \
-        numactl \
-        libuuid \
-        json-c \
-        zlib \
-        openssl \
-    \
+        pkgconf-pkg-config libaio numactl libuuid json-c zlib openssl \
+        libbsd libarchive jansson \
     && (dnf install -y libnbd rdma-core || true)
 
-COPY --from=build /root/rpmbuild/RPMS /root/rpm-artifacts
+RUN mkdir -p /root/rpm-artifacts
+COPY --from=build /root/rpmbuild/RPMS /root/rpm-artifacts/build-root/
+COPY --from=build /src/rpmbuild/RPMS /root/rpm-artifacts/build-src/
 
 RUN set -euxo pipefail \
-    \
-    \
-    && dnf install -y /root/rpm-artifacts/$(uname -m)/*.rpm \
+    && find /root/rpm-artifacts -name "*.rpm" > /tmp/rpm_list.txt \
+    && dnf install -y $(cat /tmp/rpm_list.txt) \
         --nogpgcheck \
         --setopt=install_weak_deps=0 \
-    \
-    && rpm -qa | grep spdk || true
+    && rpm -qa | grep spdk
 
 ENV PATH="/usr/local/bin:${PATH}"
-
 ENTRYPOINT ["/usr/local/bin/nvmf_tgt"]
 CMD ["-u", "-r", "/var/tmp/spdk.sock"]
 #------------------------------------------------------------------------------
@@ -185,10 +179,12 @@ ENV BDEVPERF_IO_BS="4096"
 ENV BDEVPERF_IO_TYPE="verify"
 ENV BDEVPERF_CORE_LIST="0"
 
-COPY --from=build /src/build/examples/bdevperf /usr/local/bin/bdevperf
+RUN --mount=type=cache,target=/var/cache/dnf \
+    dnf install -y libbsd libaio numactl-libs
+
+COPY --from=build /src/examples/bdev/bdevperf/bdevperf /usr/local/bin/bdevperf
 COPY --from=build /src/examples/bdev/bdevperf/bdevperf.py /usr/libexec/spdk/scripts/bdevperf.py
 
-# Optional sanity check
 RUN bdevperf -h || true
 
 RUN echo "#!/bin/sh -x"                                                 > /entrypoint && \
