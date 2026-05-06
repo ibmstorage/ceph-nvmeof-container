@@ -138,6 +138,7 @@ RUN set -eux; \
     dnf install -y \
         pkgconf-pkg-config libaio numactl libuuid json-c zlib openssl \
         libbsd libarchive jansson \
+        cpio grep \
     && dnf clean all
 
 COPY --from=build /usr/lib64/libnbd.so.0* /usr/lib64/
@@ -157,7 +158,7 @@ RUN set -euxo pipefail; \
     rm -rf /tmp/accel-rpms /tmp/spdk-rpms; \
     ldconfig
 
-RUN nvmf_tgt -V || echo "Binary exists"
+RUN nvmf_tgt -V || echo "SPDK Binary Found"
 RUN ldd /usr/local/bin/nvmf_tgt | grep -E "librbd|libnbd"
 
 ENV PATH="/usr/local/bin:${PATH}"
