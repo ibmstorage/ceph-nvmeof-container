@@ -144,31 +144,41 @@ ARG DNF_OPTS
 COPY --from=build /etc/yum.repos.d/ceph.repo /etc/yum.repos.d/ceph.repo
 
 RUN set -eux; \
-    dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm || \
-    echo "EPEL 10 not yet available, proceeding with caution"
-
-RUN --mount=type=cache,target=/var/cache/dnf \
-    --mount=type=cache,target=/var/lib/dnf \
-    set -euxo pipefail \
-    && dnf install -y \
-        pkgconf-pkg-config libaio numactl libuuid json-c zlib openssl \
-        libbsd libarchive jansson \
-    && (dnf install -y libnbd rdma-core || true)
+    dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm || echo "EPEL fallback"; \
+    dnf install -y \
+        pkgconf-pkg-config \
+        libaio \
+        numactl \
+        libuuid \
+        json-c \
+        zlib \
+        openssl \
+        libbsd \
+        libarchive \
+        jansson \
+    && (dnf install -y libnbd rdma-core || true) \
+    && dnf clean all
 
 RUN mkdir -p /root/rpm-artifacts
-COPY --from=build /root/rpmbuild/RPMS /root/rpm-artifacts/build-root/
-COPY --from=build /src/rpmbuild/RPMS /root/rpm-artifacts/build-src/
+COPY --from=build /root/rpmbuild/RPMS /root/rpm-artifacts/root-build/
+COPY --from=build /src/rpmbuild/RPMS /root/rpm-artifacts/src-build/
 
-RUN set -euxo pipefail \
-    && find /root/rpm-artifacts -name "*.rpm" > /tmp/rpm_list.txt \
-    && dnf install -y $(cat /tmp/rpm_list.txt) \
-        --nogpgcheck \
-        --setopt=install_weak_deps=0 \
-    && rpm -qa | grep spdk
+RUN set -euxo pipefail; \
+    RPMS=$(find /root/rpm-artifacts -name "*.rpm"); \
+    if [ -n "$RPMS" ]; then \
+        dnf install -y $RPMS --nogpgcheck --setopt=install_weak_deps=0; \
+    else \
+        echo "No RPMs found to install!" && exit 1; \
+    fi; \
+    dnf clean all
+
+RUN rpm -qa | grep -E "spdk|accel-config" || true
 
 ENV PATH="/usr/local/bin:${PATH}"
+
 ENTRYPOINT ["/usr/local/bin/nvmf_tgt"]
 CMD ["-u", "-r", "/var/tmp/spdk.sock"]
+
 #------------------------------------------------------------------------------
 FROM spdk AS bdevperf
 
