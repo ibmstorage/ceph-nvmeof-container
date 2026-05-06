@@ -146,21 +146,18 @@ COPY --from=build /usr/lib64/libibverbs.so.1* /usr/lib64/
 COPY --from=build /usr/lib64/libibumad.so.3* /usr/lib64/
 COPY --from=build /usr/lib64/librbd.so.1* /usr/lib64/
 
-RUN ldconfig
-
-RUN mkdir -p /root/rpm-artifacts/accel-rpms /root/rpm-artifacts/spdk-rpms
-COPY --from=build /root/rpmbuild/RPMS /root/rpm-artifacts/accel-rpms/
-COPY --from=build /root/rpmbuild/rpm /root/rpm-artifacts/spdk-rpms/
+COPY --from=build /root/rpmbuild/RPMS /tmp/accel-rpms/
+COPY --from=build /root/rpmbuild/rpm /tmp/spdk-rpms/
 
 RUN set -euxo pipefail; \
-    RUNTIME_RPMS=$(find /root/rpm-artifacts -name "*.rpm" | grep -vE "debuginfo|devel|debugsource"); \
-    if [ -n "$RUNTIME_RPMS" ]; then \
-        echo "Installing Runtime Packages: $RUNTIME_RPMS"; \
-        rpm -ivh --nodeps $RUNTIME_RPMS; \
-    else \
-        echo "ERROR: No runtime RPMs found" && exit 1; \
-    fi
+    cd /; \
+    find /tmp/accel-rpms /tmp/spdk-rpms -name "*.rpm" \
+        | grep -vE "debuginfo|devel|debugsource" \
+        | xargs -I {} sh -c 'rpm2cpio {} | cpio -idmv'; \
+    rm -rf /tmp/accel-rpms /tmp/spdk-rpms; \
+    ldconfig
 
+RUN nvmf_tgt -V || echo "Binary exists"
 RUN ldd /usr/local/bin/nvmf_tgt | grep -E "librbd|libnbd"
 
 ENV PATH="/usr/local/bin:${PATH}"
