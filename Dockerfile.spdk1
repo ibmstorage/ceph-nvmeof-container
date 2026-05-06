@@ -148,7 +148,6 @@ RUN --mount=type=cache,target=/var/cache/dnf \
     set -euxo pipefail \
     \
     && dnf clean all \
-    && rm -rf /var/cache/dnf /var/lib/dnf \
     \
     && dnf install -y \
         pkgconf-pkg-config \
@@ -161,8 +160,7 @@ RUN --mount=type=cache,target=/var/cache/dnf \
     \
     && (dnf install -y libnbd rdma-core || true) \
     \
-    && dnf clean all \
-    && rm -rf /var/cache/dnf /var/lib/dnf
+    && dnf clean all
 
 COPY --from=build /root/rpmbuild/RPMS /tmp/rpms
 
