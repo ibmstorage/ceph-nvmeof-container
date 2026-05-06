@@ -158,23 +158,20 @@ RUN --mount=type=cache,target=/var/cache/dnf \
         zlib \
         openssl \
     \
-    && (dnf install -y libnbd rdma-core || true) \
-    \
-    && dnf clean all
+    && (dnf install -y libnbd rdma-core || true)
 
-COPY --from=build /root/rpmbuild/RPMS /tmp/rpms
+COPY --from=build /root/rpmbuild/RPMS /root/rpm-artifacts
 
 RUN set -euxo pipefail \
     \
-    && rm -f /var/lib/rpm/__db* || true \
     \
-    && dnf install -y /tmp/rpms/$(uname -m)/*.rpm \
+    && dnf install -y /root/rpm-artifacts/$(uname -m)/*.rpm \
         --nogpgcheck \
         --setopt=install_weak_deps=0 \
     \
-    && rpm -qa --last | head -n 50 || true \
-    \
-    && rm -rf /tmp/rpms
+    && rpm -qa | grep spdk || true
+
+ENV PATH="/usr/local/bin:${PATH}"
 
 ENTRYPOINT ["/usr/local/bin/nvmf_tgt"]
 CMD ["-u", "-r", "/var/tmp/spdk.sock"]
