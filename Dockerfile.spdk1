@@ -137,21 +137,8 @@ ARG DNF_OPTS
 
 COPY --from=build /etc/yum.repos.d/ceph.repo /etc/yum.repos.d/ceph.repo
 
-RUN set -euxo pipefail; \
-    \
-    dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm || true; \
-    \
-    # IMPORTANT: Ceph dependency chain MUST be installed first
-    dnf install -y \
-        librbd1 \
-        ceph-common \
-        ceph-selinux \
-        ceph-mgr \
-        ceph-osd \
-        libnbd \
-    || true; \
-    \
-    # base runtime deps
+RUN set -eux; \
+    dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm || echo "EPEL fallback"; \
     dnf install -y \
         pkgconf-pkg-config \
         libaio \
@@ -163,9 +150,12 @@ RUN set -euxo pipefail; \
         libbsd \
         libarchive \
         jansson \
-    ; \
-    \
-    dnf clean all
+    && (dnf install -y libnbd rdma-core || true) \
+    && dnf clean all
+
+COPY --from=build /usr/lib64/libnbd.so.0* /usr/lib64/
+COPY --from=build /usr/lib64/librdmacm.so.1* /usr/lib64/
+COPY --from=build /usr/lib64/libibverbs.so.1* /usr/lib64/
 
 RUN mkdir -p /root/rpm-artifacts/accel-rpms /root/rpm-artifacts/spdk-rpms
 
