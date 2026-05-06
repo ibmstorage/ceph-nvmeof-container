@@ -164,16 +164,17 @@ RUN --mount=type=bind,from=build,source=/root/rpmbuild/RPMS,target=/rpm \
         libnbd libaio numactl libuuid json-c zlib openssl rdma-core \
         --setopt=install_weak_deps=0 \
     \
-    # Install ONLY UBI-built RPMs
     && dnf install -y /rpm/$(uname -m)/*.rpm \
         --nogpgcheck \
         --setopt=install_weak_deps=0 \
     \
-    # Sanity check
-    && rpm -qa | head \
+
+    && rpm -qa > /tmp/rpm_list.txt \
+    && tail -n 50 /tmp/rpm_list.txt \
     \
     && dnf clean all \
-    && subscription-manager unregister
+    \
+    && subscription-manager unregister || true
 
 ENTRYPOINT [ "/usr/local/bin/nvmf_tgt" ]
 CMD [ "-u", "-r", "/var/tmp/spdk.sock" ]
