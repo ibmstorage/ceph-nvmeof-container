@@ -131,6 +131,9 @@ RUN --mount=type=cache,target=/var/cache/dnf \
 RUN make -C ./examples/bdev/bdevperf
 
 #------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+# SPDK FINAL STAGE
+#------------------------------------------------------------------------------
 FROM registry.redhat.io/ubi10/ubi:latest AS spdk
 
 RUN set -eux; \
@@ -141,11 +144,12 @@ RUN set -eux; \
         cpio grep \
     && dnf clean all
 
-COPY --from=build /usr/lib64/libnbd.so.0* /usr/lib64/
-COPY --from=build /usr/lib64/librdmacm.so.1* /usr/lib64/
-COPY --from=build /usr/lib64/libibverbs.so.1* /usr/lib64/
-COPY --from=build /usr/lib64/libibumad.so.3* /usr/lib64/
-COPY --from=build /usr/lib64/librbd.so.1* /usr/lib64/
+RUN mkdir -p /opt/spdk/lib
+COPY --from=build /usr/lib64/libnbd.so.0* /opt/spdk/lib/
+COPY --from=build /usr/lib64/librdmacm.so.1* /opt/spdk/lib/
+COPY --from=build /usr/lib64/libibverbs.so.1* /opt/spdk/lib/
+COPY --from=build /usr/lib64/libibumad.so.3* /opt/spdk/lib/
+COPY --from=build /usr/lib64/librbd.so.1* /opt/spdk/lib/
 
 COPY --from=build /root/rpmbuild/RPMS /tmp/accel-rpms/
 COPY --from=build /root/rpmbuild/rpm /tmp/spdk-rpms/
@@ -155,13 +159,14 @@ RUN set -euxo pipefail; \
     find /tmp/accel-rpms /tmp/spdk-rpms -name "*.rpm" \
         | grep -vE "debuginfo|devel|debugsource" \
         | xargs -I {} sh -c 'rpm2cpio {} | cpio -idmv'; \
-    rm -rf /tmp/accel-rpms /tmp/spdk-rpms; \
-    ldconfig
+    rm -rf /tmp/accel-rpms /tmp/spdk-rpms
 
-RUN nvmf_tgt -V || echo "SPDK Binary Found"
-RUN ldd /usr/local/bin/nvmf_tgt | grep -E "librbd|libnbd"
-
+ENV LD_LIBRARY_PATH="/opt/spdk/lib:${LD_LIBRARY_PATH}"
 ENV PATH="/usr/local/bin:${PATH}"
+
+RUN rpm -qa > /dev/null && echo "System RPM tool is healthy"
+RUN ldd /usr/local/bin/nvmf_tgt | grep "opt/spdk/lib"
+
 ENTRYPOINT ["/usr/local/bin/nvmf_tgt"]
 CMD ["-u", "-r", "/var/tmp/spdk.sock"]
 
