@@ -26,8 +26,8 @@ ARG SPDK_VERSION \
 WORKDIR /src
 COPY . .
 
-RUN --mount=type=bind,src=/etc/yum.repos.d/ceph.repo,target=/etc/yum.repos.d/ceph.repo \
-    dnf repolist
+COPY ceph.repo /etc/yum.repos.d/ceph.repo
+COPY ceph-pkgset /tmp/ceph-pkgset
 
 COPY spdk/ /src/
 COPY spdk/scripts/ /src/scripts/
