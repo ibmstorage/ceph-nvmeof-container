@@ -137,7 +137,7 @@ COPY --from=build /root/rpmbuild/RPMS /rpm
 
 #------------------------------------------------------------------------------
 
-FROM registry.redhat.io/ubi10/ubi:latest as spdk
+FROM registry.redhat.io/ubi10/ubi:latest AS spdk
 
 ARG DNF_OPTS
 
@@ -147,9 +147,19 @@ RUN --mount=type=cache,target=/var/cache/dnf \
     --mount=type=cache,target=/var/lib/dnf \
     set -euxo pipefail \
     \
+    && dnf clean all \
+    && rm -rf /var/cache/dnf /var/lib/dnf \
+    \
     && dnf install -y \
         pkgconf-pkg-config \
-        libnbd libaio numactl libuuid json-c zlib openssl rdma-core \
+        libaio \
+        numactl \
+        libuuid \
+        json-c \
+        zlib \
+        openssl \
+    \
+    && (dnf install -y libnbd rdma-core || true) \
     \
     && dnf clean all \
     && rm -rf /var/cache/dnf /var/lib/dnf
@@ -158,8 +168,8 @@ COPY --from=build /root/rpmbuild/RPMS /tmp/rpms
 
 RUN set -euxo pipefail \
     \
-    && rm -rf /var/lib/rpm/__db* || true \
-    && rpm --rebuilddb || true \
+    && rm -f /var/lib/rpm/__db* || true \
+    && rpm --rebuilddb \
     \
     && dnf install -y /tmp/rpms/$(uname -m)/*.rpm \
         --nogpgcheck \
