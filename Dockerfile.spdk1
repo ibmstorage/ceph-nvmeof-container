@@ -131,38 +131,33 @@ RUN --mount=type=cache,target=/var/cache/dnf \
 RUN make -C ./examples/bdev/bdevperf
 
 #------------------------------------------------------------------------------
-FROM registry.redhat.io/ubi10/ubi:latest AS spdk
+FFROM registry.redhat.io/ubi10/ubi:latest AS spdk
+
+COPY --from=build /etc/yum.repos.d/ceph.repo /etc/yum.repos.d/
 
 RUN set -eux; \
     dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm; \
+    dnf config-manager --set-enabled crb || true; \
     dnf install -y \
-        pkgconf-pkg-config libaio numactl libuuid json-c zlib openssl \
-        libbsd libarchive jansson \
+        pkgconf-pkg-config \
+        libaio \
+        numactl \
+        libuuid \
+        json-c \
+        zlib \
+        openssl \
+        libbsd \
+        libarchive \
+        jansson \
+        librbd1 \
+        libnbd \
+        rdma-core \
     && dnf clean all
 
-COPY --from=build /usr/lib64/libnbd.so* /usr/lib64/
-COPY --from=build /usr/lib64/librdmacm.so* /usr/lib64/
-COPY --from=build /usr/lib64/libibverbs.so* /usr/lib64/
-COPY --from=build /usr/lib64/libibumad.so* /usr/lib64/
-COPY --from=build /usr/lib64/librbd.so* /usr/lib64/
+COPY --from=build /root/rpmbuild/RPMS /rpms
 
-RUN ldconfig
+RUN rpm -ivh /rpms/$(uname -m)/*.rpm --nogpgcheck
 
-RUN mkdir -p /root/rpm-artifacts/acc-rpms /root/rpm-artifacts/spdk-rpms
-COPY --from=build /root/rpmbuild/RPMS /root/rpm-artifacts/accel-rpms/
-COPY --from=build /root/rpmbuild/rpm /root/rpm-artifacts/spdk-rpms/
-
-RUN set -euxo pipefail; \
-    ALL_RPMS=$(find /root/rpm-artifacts -name "*.rpm"); \
-    if [ -n "$ALL_RPMS" ]; then \
-        rpm -ivh --nodeps $ALL_RPMS; \
-    else \
-        echo "ERROR: No RPMs found in artifacts directory" && exit 1; \
-    fi
-
-RUN ldd /usr/local/bin/nvmf_tgt | grep -E "librbd|libnbd"
-
-ENV PATH="/usr/local/bin:${PATH}"
 ENTRYPOINT ["/usr/local/bin/nvmf_tgt"]
 CMD ["-u", "-r", "/var/tmp/spdk.sock"]
 
