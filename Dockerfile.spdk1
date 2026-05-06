@@ -76,10 +76,18 @@ RUN rpm -ivh /root/rpmbuild/RPMS/$(uname -m)/accel-config*.rpm
 
 # Build SPDK RPMs
 RUN \
-    DEPS="no" \
-    SPDK_VERSION=${SPDK_VERSION} \
-    MAKEFLAGS=$SPDK_MAKEFLAGS \
-    rpmbuild/rpm.sh $SPDK_CONFIGURE_ARGS --target-arch="${SPDK_TARGET_ARCH}"
+    --mount=type=cache,target=/var/cache/dnf \
+    --mount=type=cache,target=/var/lib/dnf \
+    dnf install -y \
+        librados-devel \
+        librbd-devel \
+        python3-devel \
+        --setopt=install_weak_deps=0 \
+    \
+    && DEPS="no" \
+       SPDK_VERSION=${SPDK_VERSION} \
+       MAKEFLAGS=$SPDK_MAKEFLAGS \
+       rpmbuild/rpm.sh $SPDK_CONFIGURE_ARGS --target-arch="${SPDK_TARGET_ARCH}"
 
 # Build bdevperf binary
 RUN make -C ./examples/bdev/bdevperf
