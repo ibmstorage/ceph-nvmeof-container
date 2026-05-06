@@ -131,12 +131,6 @@ RUN --mount=type=cache,target=/var/cache/dnf \
 RUN make -C ./examples/bdev/bdevperf
 
 #------------------------------------------------------------------------------
-
-FROM registry.redhat.io/ubi10/ubi:latest AS rpm-export
-COPY --from=build /root/rpmbuild/RPMS /rpm
-
-#------------------------------------------------------------------------------
-
 FROM registry.redhat.io/ubi10/ubi:latest AS spdk
 
 ARG DNF_OPTS
@@ -159,23 +153,26 @@ RUN set -eux; \
     && (dnf install -y libnbd rdma-core || true) \
     && dnf clean all
 
-RUN mkdir -p /root/rpm-artifacts
-COPY --from=build /root/rpmbuild/RPMS /root/rpm-artifacts/root-build/
-COPY --from=build /src/rpmbuild/RPMS /root/rpm-artifacts/src-build/
+RUN mkdir -p /root/rpm-artifacts/accel-rpms /root/rpm-artifacts/spdk-rpms
+
+COPY --from=build /root/rpmbuild/RPMS /root/rpm-artifacts/accel-rpms/
+
+COPY --from=build /root/rpmbuild/rpm /root/rpm-artifacts/spdk-rpms/
 
 RUN set -euxo pipefail; \
-    RPMS=$(find /root/rpm-artifacts -name "*.rpm"); \
-    if [ -n "$RPMS" ]; then \
-        dnf install -y $RPMS --nogpgcheck --setopt=install_weak_deps=0; \
+    ALL_RPMS=$(find /root/rpm-artifacts -name "*.rpm"); \
+    if [ -n "$ALL_RPMS" ]; then \
+        dnf install -y $ALL_RPMS \
+            --nogpgcheck \
+            --setopt=install_weak_deps=0; \
     else \
-        echo "No RPMs found to install!" && exit 1; \
+        echo "ERROR: No RPMs found in /root/rpm-artifacts" && exit 1; \
     fi; \
     dnf clean all
 
 RUN rpm -qa | grep -E "spdk|accel-config" || true
 
 ENV PATH="/usr/local/bin:${PATH}"
-
 ENTRYPOINT ["/usr/local/bin/nvmf_tgt"]
 CMD ["-u", "-r", "/var/tmp/spdk.sock"]
 
@@ -189,13 +186,10 @@ ENV BDEVPERF_IO_BS="4096"
 ENV BDEVPERF_IO_TYPE="verify"
 ENV BDEVPERF_CORE_LIST="0"
 
-RUN --mount=type=cache,target=/var/cache/dnf \
-    dnf install -y libbsd libaio numactl-libs
-
 COPY --from=build /src/examples/bdev/bdevperf/bdevperf /usr/local/bin/bdevperf
 COPY --from=build /src/examples/bdev/bdevperf/bdevperf.py /usr/libexec/spdk/scripts/bdevperf.py
 
-RUN bdevperf -h || true
+RUN bdevperf -v || true
 
 RUN echo "#!/bin/sh -x"                                                 > /entrypoint && \
     echo "bdevperf -z -r \$BDEVPERF_SOCKET \\"                         >> /entrypoint && \
