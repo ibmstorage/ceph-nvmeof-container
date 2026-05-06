@@ -29,6 +29,12 @@ COPY . .
 # IBM Ceph repo (mounted via build.sh)
 COPY /etc/yum.repos.d/ceph.repo /etc/yum.repos.d/ceph.repo
 
+COPY spdk/ /src/
+COPY spdk/scripts/ /src/scripts/
+COPY spdk/rpmbuild/ /src/rpmbuild/
+RUN ls -l /src/rpmbuild/
+RUN ls -l /src/configure && ls -l /src/rpmbuild/rpm.sh
+
 RUN --mount=type=secret,id=org-id \
     --mount=type=secret,id=activation-key \
     set -eux \
