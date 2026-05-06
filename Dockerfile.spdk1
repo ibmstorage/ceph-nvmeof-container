@@ -53,6 +53,8 @@ RUN --mount=type=cache,target=/var/cache/dnf \
         rpm-build git-core \
         dnf-plugins-core \
         epel-release \
+
+    && dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm \
     && dnf groupinstall -y "Development Tools" \
     && dnf install -y \
         autoconf automake libtool pkgconf rpmdevtools \
