@@ -26,8 +26,8 @@ ARG SPDK_VERSION \
 WORKDIR /src
 COPY . .
 
-# IBM Ceph repo (mounted via build.sh)
-COPY /etc/yum.repos.d/ceph.repo /etc/yum.repos.d/ceph.repo
+RUN --mount=type=bind,src=/etc/yum.repos.d/ceph.repo,target=/etc/yum.repos.d/ceph.repo \
+    dnf repolist
 
 COPY spdk/ /src/
 COPY spdk/scripts/ /src/scripts/
