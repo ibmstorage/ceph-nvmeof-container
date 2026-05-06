@@ -138,10 +138,11 @@ RUN set -eux; \
     dnf install -y \
         pkgconf-pkg-config libaio numactl libuuid json-c zlib openssl \
         libbsd libarchive jansson \
-        cpio grep \
+        cpio grep fuse3-libs \
     && dnf clean all
 
-RUN mkdir -p /opt/spdk/lib
+RUN mkdir -p /opt/spdk/lib /opt/spdk/bin
+
 COPY --from=build /usr/lib64/libnbd.so.0* /opt/spdk/lib/
 COPY --from=build /usr/lib64/librdmacm.so.1* /opt/spdk/lib/
 COPY --from=build /usr/lib64/libibverbs.so.1* /opt/spdk/lib/
@@ -152,11 +153,19 @@ COPY --from=build /root/rpmbuild/RPMS /tmp/accel-rpms/
 COPY --from=build /root/rpmbuild/rpm /tmp/spdk-rpms/
 
 RUN set -euxo pipefail; \
-    cd /; \
+    mkdir -p /tmp/extract; cd /tmp/extract; \
     find /tmp/accel-rpms /tmp/spdk-rpms -name "*.rpm" \
         | grep -vE "debuginfo|devel|debugsource" \
         | xargs -I {} sh -c 'rpm2cpio {} | cpio -idmv'; \
-    rm -rf /tmp/accel-rpms /tmp/spdk-rpms
+    \
+    if [ -d usr/local/bin ]; then cp -rn usr/local/bin/* /usr/local/bin/; fi; \
+    if [ -d usr/lib64 ]; then cp -rn usr/lib64/* /opt/spdk/lib/; fi; \
+    if [ -d usr/local/lib/python3.12/site-packages ]; then \
+        mkdir -p /usr/local/lib/python3.12/site-packages; \
+        cp -rn usr/local/lib/python3.12/site-packages/* /usr/local/lib/python3.12/site-packages/; \
+    fi; \
+    \
+    cd /; rm -rf /tmp/extract /tmp/accel-rpms /tmp/spdk-rpms
 
 RUN echo '#!/bin/bash' > /usr/local/bin/nvmf_tgt_wrapper && \
     echo 'export LD_LIBRARY_PATH=/opt/spdk/lib:$LD_LIBRARY_PATH' >> /usr/local/bin/nvmf_tgt_wrapper && \
