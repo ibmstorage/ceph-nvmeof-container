@@ -75,25 +75,32 @@ RUN git clone https://github.com/intel/idxd-config.git $ACCEL_CONFIG_SRC \
 RUN rpm -ivh /root/rpmbuild/RPMS/$(uname -m)/accel-config*.rpm
 
 # Build SPDK RPMs
-RUN \
-    --mount=type=cache,target=/var/cache/dnf \
+RUN --mount=type=cache,target=/var/cache/dnf \
     --mount=type=cache,target=/var/lib/dnf \
-    dnf install -y \
-        # SPDK core deps
-        librados-devel \
-        librbd-devel \
-        python3-devel \
+    dnf groupinstall -y "Development Tools" \
+    && dnf install -y \
+        rpm-build rpmdevtools \
+        git-core \
+        dnf-plugins-core \
+        pkgconf-pkg-config \
+        autoconf automake libtool \
+        which asciidoc xmlto \
         \
-        fuse3 \
-        fuse3-devel \
+        libuuid-devel json-c-devel zlib-devel openssl-devel libaio-devel \
+        \
+        numactl numactl-devel \
+        libpcap-devel libbsd-devel jansson-devel libarchive-devel \
         \
         procps-ng \
-        meson \
-        ninja-build \
-        python3-pyelftools \
+        meson ninja-build \
+        python3 python3-devel python3-pip python3-pyelftools \
+        \
+        librados-devel librbd-devel \
+        fuse3 fuse3-devel \
+        \
+        nasm isa-l-devel \
         \
         --setopt=install_weak_deps=0 \
-    \
     && DEPS="no" \
        SPDK_VERSION=${SPDK_VERSION} \
        MAKEFLAGS=$SPDK_MAKEFLAGS \
