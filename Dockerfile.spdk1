@@ -156,6 +156,7 @@ RUN set -eux; \
 COPY --from=build /usr/lib64/libnbd.so.0* /usr/lib64/
 COPY --from=build /usr/lib64/librdmacm.so.1* /usr/lib64/
 COPY --from=build /usr/lib64/libibverbs.so.1* /usr/lib64/
+COPY --from=build /usr/lib64/libibumad.so.3* /usr/lib64/
 
 RUN mkdir -p /root/rpm-artifacts/accel-rpms /root/rpm-artifacts/spdk-rpms
 
@@ -166,15 +167,14 @@ COPY --from=build /root/rpmbuild/rpm /root/rpm-artifacts/spdk-rpms/
 RUN set -euxo pipefail; \
     ALL_RPMS=$(find /root/rpm-artifacts -name "*.rpm"); \
     if [ -n "$ALL_RPMS" ]; then \
-        dnf install -y $ALL_RPMS \
-            --nogpgcheck \
-            --setopt=install_weak_deps=0; \
+        rpm -ivh --nodeps $ALL_RPMS; \
     else \
-        echo "ERROR: No RPMs found in /root/rpm-artifacts" && exit 1; \
-    fi; \
-    dnf clean all
+        echo "ERROR: No RPMs found" && exit 1; \
+    fi
 
 RUN rpm -qa | grep -E "spdk|accel-config" || true
+
+RUN ldd /usr/local/bin/nvmf_tgt | grep -E "librbd|libnbd"
 
 ENV PATH="/usr/local/bin:${PATH}"
 ENTRYPOINT ["/usr/local/bin/nvmf_tgt"]
