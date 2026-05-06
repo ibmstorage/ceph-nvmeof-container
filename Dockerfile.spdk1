@@ -133,31 +133,37 @@ RUN make -C ./examples/bdev/bdevperf
 #------------------------------------------------------------------------------
 FROM registry.redhat.io/ubi10/ubi:latest AS spdk
 
-COPY --from=build /etc/yum.repos.d/ceph.repo /etc/yum.repos.d/
-
 RUN set -eux; \
     dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm; \
-    dnf config-manager --set-enabled crb || true; \
     dnf install -y \
-        pkgconf-pkg-config \
-        libaio \
-        numactl \
-        libuuid \
-        json-c \
-        zlib \
-        openssl \
-        libbsd \
-        libarchive \
-        jansson \
-        librbd1 \
-        libnbd \
-        rdma-core \
+        pkgconf-pkg-config libaio numactl libuuid json-c zlib openssl \
+        libbsd libarchive jansson \
     && dnf clean all
 
-COPY --from=build /root/rpmbuild/RPMS /rpms
+COPY --from=build /usr/lib64/libnbd.so.0* /usr/lib64/
+COPY --from=build /usr/lib64/librdmacm.so.1* /usr/lib64/
+COPY --from=build /usr/lib64/libibverbs.so.1* /usr/lib64/
+COPY --from=build /usr/lib64/libibumad.so.3* /usr/lib64/
+COPY --from=build /usr/lib64/librbd.so.1* /usr/lib64/
 
-RUN rpm -ivh /rpms/$(uname -m)/*.rpm --nogpgcheck
+RUN ldconfig
 
+RUN mkdir -p /root/rpm-artifacts/accel-rpms /root/rpm-artifacts/spdk-rpms
+COPY --from=build /root/rpmbuild/RPMS /root/rpm-artifacts/accel-rpms/
+COPY --from=build /root/rpmbuild/rpm /root/rpm-artifacts/spdk-rpms/
+
+RUN set -euxo pipefail; \
+    RUNTIME_RPMS=$(find /root/rpm-artifacts -name "*.rpm" | grep -vE "debuginfo|devel|debugsource"); \
+    if [ -n "$RUNTIME_RPMS" ]; then \
+        echo "Installing Runtime Packages: $RUNTIME_RPMS"; \
+        rpm -ivh --nodeps $RUNTIME_RPMS; \
+    else \
+        echo "ERROR: No runtime RPMs found" && exit 1; \
+    fi
+
+RUN ldd /usr/local/bin/nvmf_tgt | grep -E "librbd|libnbd"
+
+ENV PATH="/usr/local/bin:${PATH}"
 ENTRYPOINT ["/usr/local/bin/nvmf_tgt"]
 CMD ["-u", "-r", "/var/tmp/spdk.sock"]
 
