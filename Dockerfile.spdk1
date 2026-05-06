@@ -79,11 +79,19 @@ RUN \
     --mount=type=cache,target=/var/cache/dnf \
     --mount=type=cache,target=/var/lib/dnf \
     dnf install -y \
+        # SPDK core deps
         librados-devel \
         librbd-devel \
         python3-devel \
+        \
         fuse3 \
         fuse3-devel \
+        \
+        procps-ng \
+        meson \
+        ninja-build \
+        python3-pyelftools \
+        \
         --setopt=install_weak_deps=0 \
     \
     && DEPS="no" \
