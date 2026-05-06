@@ -133,48 +133,24 @@ RUN make -C ./examples/bdev/bdevperf
 #------------------------------------------------------------------------------
 FROM registry.redhat.io/ubi10/ubi:latest AS spdk
 
-RUN set -eux; \
-    dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm; \
-    dnf install -y \
+ARG DNF_OPTS
+
+RUN dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm && \
+    dnf install -y $DNF_OPTS \
         pkgconf-pkg-config libaio numactl libuuid json-c zlib openssl \
-        libbsd libarchive jansson \
-        cpio grep fuse3-libs \
-    && dnf clean all
+        libbsd libarchive jansson fuse3-libs procps-ng
 
-RUN mkdir -p /opt/spdk/lib /opt/spdk/bin
+RUN --mount=type=bind,from=build,source=/root/rpmbuild/rpm,target=/tmp/spdk-rpms \
+    --mount=type=bind,from=build,source=/root/rpmbuild/RPMS,target=/tmp/accel-rpms \
+    set -eux; \
+    dnf install -y /tmp/accel-rpms/$(uname -m)/accel-config-libs-*.rpm \
+                   /tmp/accel-rpms/$(uname -m)/accel-config-*.rpm; \
+    dnf install -y /tmp/spdk-rpms/$(uname -m)/*.rpm;
 
-COPY --from=build /usr/lib64/libnbd.so.0* /opt/spdk/lib/
-COPY --from=build /usr/lib64/librdmacm.so.1* /opt/spdk/lib/
-COPY --from=build /usr/lib64/libibverbs.so.1* /opt/spdk/lib/
-COPY --from=build /usr/lib64/libibumad.so.3* /opt/spdk/lib/
-COPY --from=build /usr/lib64/librbd.so.1* /opt/spdk/lib/
+COPY --from=build /usr/local/lib/python3.12/site-packages/ /usr/local/lib/python3.12/site-packages/
 
-COPY --from=build /root/rpmbuild/RPMS /tmp/accel-rpms/
-COPY --from=build /root/rpmbuild/rpm /tmp/spdk-rpms/
-
-RUN set -euxo pipefail; \
-    mkdir -p /tmp/extract; cd /tmp/extract; \
-    find /tmp/accel-rpms /tmp/spdk-rpms -name "*.rpm" \
-        | grep -vE "debuginfo|devel|debugsource" \
-        | xargs -I {} sh -c 'rpm2cpio {} | cpio -idmv'; \
-    \
-    if [ -d usr/local/bin ]; then cp -rn usr/local/bin/* /usr/local/bin/; fi; \
-    if [ -d usr/lib64 ]; then cp -rn usr/lib64/* /opt/spdk/lib/; fi; \
-    if [ -d usr/local/lib/python3.12/site-packages ]; then \
-        mkdir -p /usr/local/lib/python3.12/site-packages; \
-        cp -rn usr/local/lib/python3.12/site-packages/* /usr/local/lib/python3.12/site-packages/; \
-    fi; \
-    \
-    cd /; rm -rf /tmp/extract /tmp/accel-rpms /tmp/spdk-rpms
-
-RUN echo '#!/bin/bash' > /usr/local/bin/nvmf_tgt_wrapper && \
-    echo 'export LD_LIBRARY_PATH=/opt/spdk/lib:$LD_LIBRARY_PATH' >> /usr/local/bin/nvmf_tgt_wrapper && \
-    echo 'exec /usr/local/bin/nvmf_tgt "$@"' >> /usr/local/bin/nvmf_tgt_wrapper && \
+RUN echo -e '#!/bin/bash\nexec /usr/local/bin/nvmf_tgt "$@"' > /usr/local/bin/nvmf_tgt_wrapper && \
     chmod +x /usr/local/bin/nvmf_tgt_wrapper
-
-ENV PATH="/usr/local/bin:${PATH}"
-
-RUN rpm -qa > /dev/null && echo "SUCCESS: System RPM tool is healthy"
 
 ENTRYPOINT ["/usr/local/bin/nvmf_tgt_wrapper"]
 CMD ["-u", "-r", "/var/tmp/spdk.sock"]
