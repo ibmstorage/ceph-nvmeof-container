@@ -57,8 +57,7 @@ RUN --mount=type=cache,target=/var/cache/dnf \
         autoconf automake libtool pkgconf rpmdevtools \
         which asciidoc xmlto \
         libuuid-devel json-c-devel zlib-devel openssl-devel \
-        libnbd libnbd-devel \
-    && subscription-manager unregister 
+        libnbd libnbd-devel
 
 # Build accel-config
 RUN git clone https://github.com/intel/idxd-config.git $ACCEL_CONFIG_SRC \
@@ -136,6 +135,7 @@ RUN --mount=type=cache,target=/var/cache/dnf \
 # Build bdevperf binary
 RUN make -C ./examples/bdev/bdevperf
 
+RUN subscription-manager unregister || true
 #------------------------------------------------------------------------------
 FROM registry.redhat.io/ubi10/ubi:latest AS spdk
 
