@@ -50,16 +50,15 @@ RUN --mount=type=secret,id=org-id \
 RUN --mount=type=cache,target=/var/cache/dnf \
     --mount=type=cache,target=/var/lib/dnf \
     dnf install -y $DNF_OPTS \
-        rpm-build git-core \
-        dnf-plugins-core \
-    && dnf install -y \
-        https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm \
+        rpm-build git-core dnf-plugins-core \
+    && dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm \
     && dnf groupinstall -y "Development Tools" || true \
     && dnf install -y \
         autoconf automake libtool pkgconf rpmdevtools \
         which asciidoc xmlto \
         libuuid-devel json-c-devel zlib-devel openssl-devel \
-    && subscription-manager unregister
+        libnbd libnbd-devel \
+    && subscription-manager unregister 
 
 # Build accel-config
 RUN git clone https://github.com/intel/idxd-config.git $ACCEL_CONFIG_SRC \
@@ -75,11 +74,11 @@ RUN git clone https://github.com/intel/idxd-config.git $ACCEL_CONFIG_SRC \
 # Install accel locally (safe)
 RUN rpm -ivh /root/rpmbuild/RPMS/$(uname -m)/accel-config*.rpm
 
-RUN dnf install -y rpmdevtools gcc make \
-    && rpmdev-setuptree \
-    && dnf download --source libnbd \
-    && rpmbuild --rebuild libnbd-*.src.rpm \
-    && dnf install -y ~/rpmbuild/RPMS/$(uname -m)/libnbd*.rpm
+# RUN dnf install -y rpmdevtools gcc make \
+#     && rpmdev-setuptree \
+#     && dnf download --source libnbd \
+#     && rpmbuild --rebuild libnbd-*.src.rpm \
+#     && dnf install -y ~/rpmbuild/RPMS/$(uname -m)/libnbd*.rpm
 
 # Build SPDK RPMs
 RUN --mount=type=cache,target=/var/cache/dnf \
