@@ -133,7 +133,46 @@ RUN make -C ./examples/bdev/bdevperf
 #------------------------------------------------------------------------------
 FROM registry.redhat.io/ubi10/ubi:10.0 AS spdk
 
-ARG DNF_OPTS
+ARG SPDK_CEPH_VERSION \
+    SPDK_VERSION \
+    DNF_OPTS
+
+ARG SPDK_PKGDEP_ARGS \
+    SPDK_CONFIGURE_ARGS \
+    SPDK_TARGET_ARCH \
+    SPDK_MAKEFLAGS
+
+ARG SPDK_NAME \
+    SPDK_SUMMARY \
+    SPDK_DESCRIPTION \
+    SPDK_URL \
+    SPDK_MAINTAINER \
+    BUILD_DATE \
+    SPDK_GIT_REPO \
+    SPDK_GIT_BRANCH \
+    SPDK_GIT_COMMIT
+
+# Generic labels
+LABEL name="$SPDK_NAME" \
+      version="$SPDK_VERSION" \
+      summary="$SPDK_SUMMARY" \
+      description="$SPDK_DESCRIPTION" \
+      maintainer="$SPDK_MAINTAINER" \
+      release="" \
+      url="$SPDK_URL" \
+      build-date="$BUILD_DATE" \
+      vcs-ref="$SPDK_GIT_COMMIT"
+
+# SPDK-specific labels
+LABEL io.spdk.version="$SPDK_VERSION" \
+      io.spdk.build.pkgdep-args="$SPDK_PKGDEP_ARGS" \
+      io.spdk.build.configure-args="$SPDK_CONFIGURE_ARGS" \
+      io.spdk.build.makeflags="$SPDK_MAKEFLAGS" \
+      io.spdk.build.target-arch="$SPDK_TARGET_ARCH" \
+      io.spdk.build.ceph-release="$SPDK_CEPH_VERSION" \
+      io.spdk.git.repo="$SPDK_GIT_REPO" \
+      io.spdk.git.branch="$SPDK_GIT_BRANCH" \
+      io.spdk.git.commit="$SPDK_GIT_COMMIT"
 
 COPY ceph.repo /etc/yum.repos.d/ceph.repo
 
