@@ -137,16 +137,6 @@ ARG DNF_OPTS
 
 COPY ceph.repo /etc/yum.repos.d/ceph.repo
 
-RUN --mount=type=secret,id=org-id \
-    --mount=type=secret,id=activation-key \
-    set -eux \
-    && subscription-manager register \
-        --activationkey=$(cat /run/secrets/activation-key) \
-        --org=$(cat /run/secrets/org-id) \
-    && subscription-manager repos \
-        --enable=rhel-10-for-x86_64-baseos-rpms \
-        --enable=rhel-10-for-x86_64-appstream-rpms
-
 RUN \
     --mount=type=secret,id=org-id \
     --mount=type=secret,id=activation-key \
@@ -156,18 +146,30 @@ RUN \
     --mount=type=cache,target=/var/lib/dnf \
     set -eux; \
     \
-    && dnf $DNF_OPTS install -y dnf-plugins-core \
-    && dnf $DNF_OPTS install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm \
+    subscription-manager register \
+        --activationkey=$(cat /run/secrets/activation-key) \
+        --org=$(cat /run/secrets/org-id); \
     \
-    && rpm -ivh /accel-rpms/$(uname -m)/accel-config-libs-[0-9]*.rpm \
-                /accel-rpms/$(uname -m)/accel-config-[0-9]*.rpm \
+    subscription-manager repos \
+        --enable=rhel-10-for-x86_64-baseos-rpms \
+        --enable=rhel-10-for-x86_64-appstream-rpms \
+        --enable=codeready-builder-for-rhel-10-x86_64-rpms; \
     \
-    && dnf $DNF_OPTS install -y /rpm/$(uname -m)/*.rpm \
+    dnf $DNF_OPTS install -y \
+        dnf-plugins-core \
+        https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm; \
     \
-    && dnf $DNF_OPTS update -y \
-    && subscription-manager unregister
+    rpm -ivh \
+        /accel-rpms/$(uname -m)/accel-config-libs-[0-9]*.rpm \
+        /accel-rpms/$(uname -m)/accel-config-[0-9]*.rpm; \
+    \
+    dnf $DNF_OPTS install -y /rpm/$(uname -m)/*.rpm; \
+    \
+    dnf $DNF_OPTS update -y; \
+    \
+    subscription-manager unregister
 
-ENTRYPOINT ["/usr/local/bin/nvmf_tgt_wrapper"]
+ENTRYPOINT ["/usr/local/bin/nvmf_tgt"]
 CMD ["-u", "-r", "/var/tmp/spdk.sock"]
 #------------------------------------------------------------------------------
 FROM spdk AS bdevperf
