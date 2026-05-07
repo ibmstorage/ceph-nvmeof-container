@@ -165,8 +165,6 @@ RUN \
     \
     dnf $DNF_OPTS install -y /rpm/$(uname -m)/*.rpm; \
     \
-    dnf $DNF_OPTS update -y; \
-    \
     subscription-manager unregister
 
 ENTRYPOINT ["/usr/local/bin/nvmf_tgt"]
