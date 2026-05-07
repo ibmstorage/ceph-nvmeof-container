@@ -143,7 +143,7 @@ RUN \
 
 RUN \
     --mount=type=cache,target=/root/.cache/pip \
-    pip install pdm==$PDM_VERSION
+    pip install --ignore-installed pdm==$PDM_VERSION
 
 #------------------------------------------------------------------------------
 FROM builder-base AS builder
