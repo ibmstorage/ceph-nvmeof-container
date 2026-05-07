@@ -131,7 +131,7 @@ RUN --mount=type=cache,target=/var/cache/dnf \
 RUN make -C ./examples/bdev/bdevperf
 
 #------------------------------------------------------------------------------
-FROM registry.redhat.io/rhel10/rhel:latest AS spdk
+FROM registry.redhat.io/rhel10/rhel:10.0 AS spdk
 
 ARG DNF_OPTS
 
