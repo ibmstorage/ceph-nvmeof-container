@@ -135,6 +135,11 @@ RUN --mount=type=cache,target=/var/cache/dnf \
 # Build bdevperf binary
 RUN make -C ./examples/bdev/bdevperf
 
+RUN mkdir -p /output/libnbd \
+    && dnf download --destdir=/output/libnbd libnbd libnbd-devel
+RUN mkdir -p /output/accel && cp /root/rpmbuild/RPMS/$(uname -m)/accel-config*.rpm /output/accel/
+RUN mkdir -p /output/spdk && cp /root/rpmbuild/rpm/$(uname -m)/*.rpm /output/spdk/
+
 RUN subscription-manager unregister || true
 #------------------------------------------------------------------------------
 FROM registry.redhat.io/ubi10/ubi:latest AS spdk
@@ -143,17 +148,18 @@ ARG DNF_OPTS
 
 COPY ceph.repo /etc/yum.repos.d/ceph.repo
 
-RUN --mount=type=bind,from=build,source=/root/rpmbuild/rpm,target=/rpm \
-    --mount=type=bind,from=build,source=/root/rpmbuild/RPMS,target=/accel-rpms \
+RUN --mount=type=bind,from=build,source=/output/libnbd,target=/libnbd-rpms \
+    --mount=type=bind,from=build,source=/output/accel,target=/accel-rpms \
+    --mount=type=bind,from=build,source=/output/spdk,target=/spdk-rpms \
     --mount=type=cache,target=/var/cache/dnf \
     --mount=type=cache,target=/var/lib/dnf \
     set -eux; \
     dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm; \
-    dnf $DNF_OPTS install -y \
-        /accel-rpms/$(uname -m)/accel-config-libs-[0-9]*.rpm \
-        /accel-rpms/$(uname -m)/accel-config-[0-9]*.rpm; \
-    dnf $DNF_OPTS install -y /rpm/$(uname -m)/*.rpm; \
-    dnf $DNF_OPTS update -y
+    dnf $DNF_OPTS install -y /libnbd-rpms/*.rpm; \
+    dnf $DNF_OPTS install -y /accel-rpms/*.rpm; \
+    dnf $DNF_OPTS install -y /spdk-rpms/*.rpm; \
+    dnf $DNF_OPTS update -y; \
+    dnf clean all && rm -rf /var/cache/dnf /var/lib/dnf
 
 ENTRYPOINT ["/usr/local/bin/nvmf_tgt"]
 CMD ["-u", "-r", "/var/tmp/spdk.sock"]
