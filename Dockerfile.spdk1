@@ -35,16 +35,16 @@ COPY spdk/rpmbuild/ /src/rpmbuild/
 RUN ls -l /src/rpmbuild/
 RUN ls -l /src/configure && ls -l /src/rpmbuild/rpm.sh
 
-RUN --mount=type=secret,id=org-id \
-    --mount=type=secret,id=activation-key \
-    set -eux \
-    && subscription-manager register \
-        --activationkey=$(cat /run/secrets/activation-key) \
-        --org=$(cat /run/secrets/org-id) \
-    && subscription-manager repos \
-        --enable=rhel-10-for-x86_64-baseos-rpms \
-        --enable=rhel-10-for-x86_64-appstream-rpms \
-        --enable=codeready-builder-for-rhel-10-x86_64-rpms
+# RUN --mount=type=secret,id=org-id \
+#     --mount=type=secret,id=activation-key \
+#     set -eux \
+#     && subscription-manager register \
+#         --activationkey=$(cat /run/secrets/activation-key) \
+#         --org=$(cat /run/secrets/org-id) \
+#     && subscription-manager repos \
+#         --enable=rhel-10-for-x86_64-baseos-rpms \
+#         --enable=rhel-10-for-x86_64-appstream-rpms \
+#         --enable=codeready-builder-for-rhel-10-x86_64-rpms
 
 # Install build dependencies
 RUN --mount=type=cache,target=/var/cache/dnf \
@@ -73,6 +73,13 @@ RUN git clone https://github.com/intel/idxd-config.git $ACCEL_CONFIG_SRC \
 
 # Install accel locally (safe)
 RUN rpm -ivh /root/rpmbuild/RPMS/$(uname -m)/accel-config*.rpm
+
+# Rebuild libnbd from SRPM (needed for librbd)
+RUN dnf install -y rpmdevtools gcc make \
+    && rpmdev-setuptree \
+    && dnf download --source libnbd \
+    && rpmbuild --rebuild libnbd-*.src.rpm \
+    && dnf install -y ~/rpmbuild/RPMS/$(uname -m)/libnbd*.rpm
 
 # Build SPDK RPMs
 RUN --mount=type=cache,target=/var/cache/dnf \
@@ -131,43 +138,23 @@ RUN --mount=type=cache,target=/var/cache/dnf \
 RUN make -C ./examples/bdev/bdevperf
 
 #------------------------------------------------------------------------------
-FROM registry.redhat.io/rhel10/rhel:10.0 AS spdk
+FROM registry.redhat.io/ubi10/ubi:latest AS spdk
 
 ARG DNF_OPTS
 
 COPY ceph.repo /etc/yum.repos.d/ceph.repo
 
-RUN \
-    --mount=type=secret,id=org-id \
-    --mount=type=secret,id=activation-key \
-    --mount=type=bind,from=build,source=/root/rpmbuild/rpm,target=/rpm \
+RUN --mount=type=bind,from=build,source=/root/rpmbuild/rpm,target=/rpm \
     --mount=type=bind,from=build,source=/root/rpmbuild/RPMS,target=/accel-rpms \
     --mount=type=cache,target=/var/cache/dnf \
     --mount=type=cache,target=/var/lib/dnf \
     set -eux; \
-    \
-    subscription-manager register \
-        --activationkey=$(cat /run/secrets/activation-key) \
-        --org=$(cat /run/secrets/org-id); \
-    \
-    subscription-manager repos \
-        --enable=rhel-10-for-x86_64-baseos-rpms \
-        --enable=rhel-10-for-x86_64-appstream-rpms \
-        --enable=codeready-builder-for-rhel-10-x86_64-rpms; \
-    \
-    dnf $DNF_OPTS install -y \
-        dnf-plugins-core \
-        https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm; \
-    \
+    dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm; \
     dnf $DNF_OPTS install -y \
         /accel-rpms/$(uname -m)/accel-config-libs-[0-9]*.rpm \
         /accel-rpms/$(uname -m)/accel-config-[0-9]*.rpm; \
-    \
     dnf $DNF_OPTS install -y /rpm/$(uname -m)/*.rpm; \
-    \
-    dnf $DNF_OPTS update -y; \
-    \
-    subscription-manager unregister
+    dnf $DNF_OPTS update -y
 
 ENTRYPOINT ["/usr/local/bin/nvmf_tgt"]
 CMD ["-u", "-r", "/var/tmp/spdk.sock"]
