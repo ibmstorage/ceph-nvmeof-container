@@ -155,12 +155,6 @@ RUN \
     --mount=type=cache,target=/var/cache/dnf \
     --mount=type=cache,target=/var/lib/dnf \
     set -eux; \
-    subscription-manager register \
-        --activationkey=$(cat /run/secrets/activation-key) \
-        --org=$(cat /run/secrets/org-id) \
-    && subscription-manager repos \
-        --enable=rhel-10-for-x86_64-baseos-rpms \
-        --enable=rhel-10-for-x86_64-appstream-rpms \
     \
     && dnf $DNF_OPTS install -y dnf-plugins-core \
     && dnf $DNF_OPTS install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm \
