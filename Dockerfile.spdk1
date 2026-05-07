@@ -190,6 +190,6 @@ RUN echo "         --lcores \$BDEVPERF_CORE_LIST \\"                   >> /entry
 RUN echo "         -q \$BDEVPERF_IO_QUEUE -o \$BDEVPERF_IO_BS \\"      >> /entrypoint
 RUN echo "         -w \$BDEVPERF_IO_TYPE -t \$BDEVPERF_TEST_DURATION"  >> /entrypoint
 
-RRUN chmod 755 /entrypoint
+RUN chmod 755 /entrypoint
 
 ENTRYPOINT [ "/entrypoint" ]
