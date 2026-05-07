@@ -7,18 +7,6 @@ ARG SPDK_IMAGE \
 #------------------------------------------------------------------------------
 # Base image for NVMEOF_TARGET=cli (nvmeof-cli)
 FROM registry.redhat.io/ubi10/ubi:latest AS base-cli
-
-RUN dnf install -y \
-        python3.12 \
-        python3.12-pip \
-        python3.12-devel \
-        ceph-common \
-        openssl \
-        libaio \
-        numactl-libs \
-        libbsd \
-    && dnf clean all
-
 ENV GRPC_DNS_RESOLVER=native
 ENTRYPOINT ["python3", "-m", "control.cli"]
 CMD []
@@ -28,72 +16,116 @@ CMD []
 ARG SPDK_IMAGE
 FROM ${SPDK_IMAGE} AS base-gateway
 
-ARG REMOTE_SOURCES
-ARG REMOTE_SOURCES_DIR
-ARG ARCH
-
-ENV GRPC_DNS_RESOLVER=native
-
-# COPY $REMOTE_SOURCES $REMOTE_SOURCES_DIR
+COPY $REMOTE_SOURCES $REMOTE_SOURCES_DIR
 
 WORKDIR ${REMOTE_SOURCES_DIR}/${REMOTE_SOURCES}/app
 
-RUN --mount=type=secret,id=org-id \
-    --mount=type=secret,id=activation-key \
-    set -euxo pipefail && \
-    subscription-manager register \
-        --activationkey=$(cat /run/secrets/activation-key) \
-        --org=$(cat /run/secrets/org-id) && \
-    subscription-manager repos \
-        --enable=rhel-10-for-${ARCH}-baseos-rpms \
-        --enable=rhel-10-for-${ARCH}-appstream-rpms \
-        --enable=codeready-builder-for-rhel-10-${ARCH}-rpms || true
+RUN --mount=type=secret,id=org-id --mount=type=secret,id=activation-key subscription-manager register --activationkey=$(cat /run/secrets/activation-key) --org=$(cat /run/secrets/org-id)
 
-RUN dnf install -y \
-        python3.12 \
-        ceph-common \
-        libaio \
-        numactl \
-        numactl-libs \
-        libbsd \
-        json-c \
-        libibverbs \
-        librdmacm \
-    --setopt=install_weak_deps=0 \
-    && dnf clean all
+RUN subscription-manager repos --enable=codeready-builder-for-rhel-10-$(arch)-rpms
 
 RUN dnf install -y python3-rados python3-rbd gdb ceph-mon-client-nvmeof librbd1 dnf-plugins-core openssl --nobest --allowerasing
 
-COPY ${REMOTE_SOURCES_DIR}/${REMOTE_SOURCES}/app /src
+RUN mkdir -p /src
 
 ENTRYPOINT ["python3", "-m", "control"]
 CMD ["-c", "ceph-nvmeof.conf"]
 
 #------------------------------------------------------------------------------
-FROM base-${NVMEOF_TARGET} AS python-intermediate
+# Intermediate layer for Python set-up
+FROM base-$NVMEOF_TARGET AS python-intermediate
 
-RUN dnf install -y \
-        gcc gcc-c++ \
-        python3.12-devel \
-        libffi-devel \
-        openssl-devel \
-        git \
-        make \
-        pkgconf-pkg-config \
-    && dnf clean all
+RUN \
+    --mount=type=cache,target=/var/cache/dnf \
+    --mount=type=cache,target=/var/lib/dnf \
+    dnf update -y --exclude=openssl-fips-provider
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONIOENCODING=UTF-8 \
     LC_ALL=C.UTF-8 \
     LANG=C.UTF-8 \
-    PYTHONPATH=/src/__pypackages__/3.12/lib
+    PIP_NO_CACHE_DIR=off \
+    PYTHON_MAJOR=3 \
+    PYTHON_MINOR=12 \
+    PDM_PREFER_BINARY=:all:
 
-WORKDIR /src
+ARG APPDIR=/src
+
+ARG NVMEOF_NAME \
+    NVMEOF_SUMMARY \
+    NVMEOF_DESCRIPTION \
+    NVMEOF_URL \
+    NVMEOF_VERSION \
+    NVMEOF_MAINTAINER \
+    NVMEOF_TAGS \
+    NVMEOF_WANTS \
+    NVMEOF_EXPOSE_SERVICES \
+    BUILD_DATE \
+    NVMEOF_GIT_REPO \
+    NVMEOF_GIT_BRANCH \
+    NVMEOF_GIT_COMMIT \
+    NVMEOF_SPDK_VERSION \
+    NVMEOF_CEPH_VERSION \
+    NVMEOF_GIT_MODIFIED_FILES \
+    SPDK_GIT_REPO \
+    SPDK_GIT_BRANCH \
+    SPDK_GIT_COMMIT \
+    HUGEPAGES \
+    HUGEPAGES_DIR
+
+ENV NVMEOF_VERSION="${NVMEOF_VERSION}" \
+      NVMEOF_GIT_REPO="${NVMEOF_GIT_REPO}" \
+      NVMEOF_GIT_BRANCH="${NVMEOF_GIT_BRANCH}" \
+      NVMEOF_GIT_COMMIT="${NVMEOF_GIT_COMMIT}" \
+      BUILD_DATE="${BUILD_DATE}" \
+      NVMEOF_SPDK_VERSION="${NVMEOF_SPDK_VERSION}" \
+      NVMEOF_CEPH_VERSION="${NVMEOF_CEPH_VERSION}" \
+      NVMEOF_GIT_MODIFIED_FILES="${NVMEOF_GIT_MODIFIED_FILES}" \
+      SPDK_GIT_REPO="${SPDK_GIT_REPO}" \
+      SPDK_GIT_BRANCH="${SPDK_GIT_BRANCH}" \
+      SPDK_GIT_COMMIT="${SPDK_GIT_COMMIT}" \
+      HUGEPAGES="${HUGEPAGES}" \
+      HUGEPAGES_DIR="${HUGEPAGES_DIR}"
+
+# Generic labels
+LABEL name="$NVMEOF_NAME" \
+      version="$NVMEOF_VERSION" \
+      summary="$NVMEOF_SUMMARY" \
+      description="$NVMEOF_DESCRIPTION" \
+      maintainer="$NVMEOF_MAINTAINER" \
+      release="" \
+      url="$NVMEOF_URL" \
+      build-date="$BUILD_DATE" \
+      vcs-ref="$NVMEOF_GIT_COMMIT"
+
+# k8s-specific labels
+LABEL io.k8s.display-name="$NVMEOF_SUMMARY" \
+      io.k8s.description="$NVMEOF_DESCRIPTION"
+
+# k8s-specific labels
+LABEL io.openshift.tags="$NVMEOF_TAGS" \
+      io.openshift.wants="$NVMEOF_WANTS" \
+      io.openshift.expose-services="$NVMEOF_EXPOSE_SERVICES"
+
+# Ceph-specific labels
+LABEL io.ceph.component="$NVMEOF_NAME" \
+      io.ceph.summary="$NVMEOF_SUMMARY" \
+      io.ceph.description="$NVMEOF_DESCRIPTION" \
+      io.ceph.url="$NVMEOF_URL" \
+      io.ceph.version="$NVMEOF_VERSION" \
+      io.ceph.maintainer="$NVMEOF_MAINTAINER" \
+      io.ceph.git.repo="$NVMEOF_GIT_REPO" \
+      io.ceph.git.branch="$NVMEOF_GIT_BRANCH" \
+      io.ceph.git.commit="$NVMEOF_GIT_COMMIT"
+
+ENV PYTHONPATH=$APPDIR/__pypackages__/$PYTHON_MAJOR.$PYTHON_MINOR/lib
+
+WORKDIR $APPDIR
 
 #------------------------------------------------------------------------------
 FROM python-intermediate AS builder-base
 ARG PDM_VERSION=2.26.8 \
-    PDM_INSTALL_CMD=sync \
+    PDM_INSTALL_CMD=install \
     PDM_INSTALL_FLAGS="-v --no-isolation --no-self --no-editable" \
     PDM_INSTALL_DEV="--dev"
 ENV PDM_INSTALL_FLAGS="$PDM_INSTALL_FLAGS $PDM_INSTALL_DEV"
@@ -105,18 +137,24 @@ RUN \
     --mount=type=cache,target=/var/cache/dnf \
     --mount=type=cache,target=/var/lib/dnf \
     dnf install -y python3-pip gcc gcc-c++ python3-devel libffi-devel git
+RUN \
+    --mount=type=cache,target=/root/.cache/pip \
+    pip install -U pip "setuptools<82" wheel
 
-RUN pip install -U pip setuptools wheel
-
-RUN pip install pdm==$PDM_VERSION
+RUN \
+    --mount=type=cache,target=/root/.cache/pip \
+    pip install pdm==$PDM_VERSION
 
 #------------------------------------------------------------------------------
 FROM builder-base AS builder
 
 COPY pyproject.toml pdm.lock pdm.toml ./
-RUN pdm "$PDM_INSTALL_CMD" $PDM_INSTALL_FLAGS
+RUN \
+    --mount=type=cache,target=/root/.cache/pdm \
+    pdm install -v --no-isolation --no-self --no-editable
 
 COPY . .
+COPY ceph-nvmeof.conf /src/
 RUN pdm run protoc
 
 #------------------------------------------------------------------------------
