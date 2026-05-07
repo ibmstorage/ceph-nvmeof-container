@@ -46,20 +46,25 @@ RUN ls -l /src/configure && ls -l /src/rpmbuild/rpm.sh
 #         --enable=rhel-10-for-x86_64-appstream-rpms \
 #         --enable=codeready-builder-for-rhel-10-x86_64-rpms
 
-# Enable EPEL and rebuild missing packages
 RUN --mount=type=cache,target=/var/cache/dnf \
     --mount=type=cache,target=/var/lib/dnf \
     set -eux \
     && dnf install -y $DNF_OPTS \
         rpm-build git-core dnf-plugins-core \
+        gcc gcc-c++ make cmake \
+        autoconf automake libtool pkgconf rpmdevtools which \
+        libuuid-devel zlib-devel openssl-devel \
     && dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm \
     && dnf update -y \
-    && dnf install -y autoconf automake libtool pkgconf rpmdevtools which libuuid-devel zlib-devel openssl-devel \
-    # rebuild missing packages from SRPMs
     && rpmdev-setuptree \
-    && dnf download --source asciidoc xmlto json-c \
-    && rpmbuild --rebuild *.src.rpm \
+    && curl -LO https://kojipkgs.fedoraproject.org/packages/asciidoc/10.2.0/1.fc40/src/asciidoc-10.2.0-1.fc40.src.rpm \
+    && curl -LO https://kojipkgs.fedoraproject.org/packages/xmlto/0.0.28/1.fc40/src/xmlto-0.0.28-1.fc40.src.rpm \
+    && curl -LO https://kojipkgs.fedoraproject.org/packages/json-c/0.17/1.fc40/src/json-c-0.17-1.fc40.src.rpm \
+    && rpmbuild --rebuild asciidoc-*.src.rpm \
+    && rpmbuild --rebuild xmlto-*.src.rpm \
+    && rpmbuild --rebuild json-c-*.src.rpm \
     && dnf install -y ~/rpmbuild/RPMS/$(uname -m)/*.rpm
+
 
 
 # Build accel-config
