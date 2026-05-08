@@ -114,7 +114,6 @@ RUN --mount=type=cache,target=/var/cache/dnf \
         \
         ncurses ncurses-devel readline-devel \
         \
-        # DPDK build stability
         libfdt-devel elfutils-libelf-devel \
         \
         CUnit-devel \
@@ -124,21 +123,14 @@ RUN --mount=type=cache,target=/var/cache/dnf \
         \
         --setopt=install_weak_deps=0 \
     \
-    && export PATH=/usr/bin:/usr/local/bin:$PATH \
-    && export V=1 \
-    && export VERBOSE=1 \
-    && export CFLAGS="-Wno-error" \
-    && export MAKEFLAGS="${SPDK_MAKEFLAGS} V=1" \
+    && pip3 install --break-system-packages uv \
     \
-    && bash -x ./rpmbuild/rpm.sh \
-        $SPDK_CONFIGURE_ARGS \
-        --target-arch="${SPDK_TARGET_ARCH}" \
-      || { \
-          echo "========== RPM BUILD LOGS =========="; \
-          find /root/rpmbuild -name "*.log" -exec cat {} \; || true; \
-          echo "========== END LOGS =========="; \
-          exit 1; \
-        ;}
+    && export PATH=/usr/local/bin:/usr/bin:$PATH \
+    \
+    && DEPS="no" \
+       SPDK_VERSION=${SPDK_VERSION} \
+       MAKEFLAGS="$SPDK_MAKEFLAGS" \
+       rpmbuild/rpm.sh $SPDK_CONFIGURE_ARGS --target-arch="${SPDK_TARGET_ARCH}"
     
 
 # Build bdevperf binary
