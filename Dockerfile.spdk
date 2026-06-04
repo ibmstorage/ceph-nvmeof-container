@@ -1,75 +1,34 @@
 # syntax = docker/dockerfile:1.4
-# vim: syntax=dockerfile
 
 ARG DNF_OPTS="\
-  --enablerepo crb \
   --nobest \
   --nodocs \
   --setopt=install_weak_deps=0 \
   --setopt=keepcache=1 \
   --setopt=cachedir=/var/cache/dnf \
-  "
+"
+
 ARG ACCEL_CONFIG_SRC="/accel-config"
 
-FROM quay.io/centos/centos:stream9 AS build
+#------------------------------------------------------------------------------
 
-ARG SPDK_CEPH_VERSION \
-    CEPH_CLUSTER_CEPH_REPO_BASEURL \
-    SPDK_VERSION \
-    DNF_OPTS \
+FROM registry.redhat.io/ubi10/ubi:latest AS build
+
+ARG TARGETPLATFORM
+ARG SPDK_VERSION \
+    SPDK_CEPH_VERSION \
     SPDK_PKGDEP_ARGS \
     SPDK_CONFIGURE_ARGS \
     SPDK_TARGET_ARCH \
     SPDK_MAKEFLAGS \
+    DNF_OPTS \
     ACCEL_CONFIG_SRC
-
-RUN <<EOF
-    echo Log variables
-    echo ======================================================================
-    echo SPDK_PKGDEP_ARGS=$SPDK_PKGDEP_ARGS
-    echo SPDK_CONFIGURE_ARGS=$SPDK_CONFIGURE_ARGS
-    echo SPDK_TARGET_ARCH=$SPDK_TARGET_ARCH
-    echo SPDK_MAKEFLAGS=$SPDK_MAKEFLAGS
-    echo CEPH_CLUSTER_CEPH_REPO_BASEURL=$CEPH_CLUSTER_CEPH_REPO_BASEURL
-    echo ACCEL_CONFIG_SRC=$ACCEL_CONFIG_SRC
-    echo ======================================================================
-EOF
 
 WORKDIR /src
 COPY . .
 
-COPY <<EOF /etc/yum.conf
-[main]
-gpgcheck=1
-installonly_limit=3
-clean_requirements_on_remove=True
-best=False
-skip_if_unavailable=False
-cachedir=/var/cache/dnf
-install_weak_deps=0
-keepcache=True
-tsflags=nodocs
-EOF
-
-ARG SPDK_CEPH_VERSION=19.2.3
-ARG CEPH_CLUSTER_CEPH_REPO_BASEURL=https://download.ceph.com/rpm-${SPDK_CEPH_VERSION}/el9/\$basearch
-
-COPY <<EOF /etc/yum.repos.d/ceph.repo
-[Ceph]
-name=Ceph packages for \$basearch
-baseurl=${CEPH_CLUSTER_CEPH_REPO_BASEURL}
-enabled=1
-priority=2
-gpgcheck=0
-
-[Ceph-noarch]
-name=Ceph noarch packages
-baseurl=https://download.ceph.com/rpm-${SPDK_CEPH_VERSION}/el9/noarch
-enabled=1
-priority=2
-gpgcheck=0
-EOF
-
+COPY ceph.repo /etc/yum.repos.d/ceph.repo
+COPY ceph-pkgset /tmp/ceph-pkgset
 
 COPY spdk/ /src/
 COPY spdk/scripts/ /src/scripts/
@@ -77,71 +36,113 @@ COPY spdk/rpmbuild/ /src/rpmbuild/
 RUN ls -l /src/rpmbuild/
 RUN ls -l /src/configure && ls -l /src/rpmbuild/rpm.sh
 
-RUN \
-    --mount=type=cache,target=/var/cache/dnf \
-    --mount=type=cache,target=/var/lib/dnf \
-    --mount=type=cache,target=/root/.cache/pip \
-    rpm --import https://www.elrepo.org/RPM-GPG-KEY-elrepo.org \
-    && rpm --import https://www.elrepo.org/RPM-GPG-KEY-v2-elrepo.org \
-    && dnf install -y $DNF_OPTS -y 'dnf-command(config-manager)' \
-    && yum install -y https://www.elrepo.org/elrepo-release-9.el9.elrepo.noarch.rpm \
-    && dnf config-manager --set-enabled crb \
-    && dnf install $DNF_OPTS -y \
-        rpm-build \
-        git-core \
-	epel-release \
-	epel-next-release \
-    && scripts/pkgdep.sh $SPDK_PKGDEP_ARGS \
-    && dnf $DNF_OPTS update -y
+RUN --mount=type=secret,id=org-id \
+    --mount=type=secret,id=activation-key \
+    set -eux \
+    && subscription-manager register \
+        --activationkey=$(cat /run/secrets/activation-key) \
+        --org=$(cat /run/secrets/org-id) \
+    && subscription-manager repos \
+        --enable=rhel-10-for-$(uname -m)-baseos-rpms \
+        --enable=rhel-10-for-$(uname -m)-appstream-rpms \
+        --enable=codeready-builder-for-rhel-10-$(uname -m)-rpms
 
-RUN \
-    --mount=type=cache,target=/var/cache/dnf \
+# Install build dependencies
+RUN --mount=type=cache,target=/var/cache/dnf \
     --mount=type=cache,target=/var/lib/dnf \
-    --mount=type=cache,target=/root/.cache/pip \
-    dnf groupinstall -y "Development Tools" \
-    && dnf install -y autoconf automake libtool pkgconf rpm-build rpmdevtools \
-    && dnf install -y which asciidoc xmlto libuuid-devel json-c-devel zlib-devel openssl-devel \
-    && mkdir -p $ACCEL_CONFIG_SRC \
-    && git clone https://github.com/intel/idxd-config.git $ACCEL_CONFIG_SRC \
-    && pushd $ACCEL_CONFIG_SRC \
+    dnf install -y $DNF_OPTS \
+        rpm-build git-core \
+        dnf-plugins-core \
+    && dnf install -y \
+        https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm \
+    && dnf groupinstall -y "Development Tools" || true \
+    && dnf install -y \
+        autoconf automake libtool pkgconf rpmdevtools \
+        which asciidoc xmlto \
+        libuuid-devel json-c-devel zlib-devel openssl-devel
+
+# Build accel-config
+RUN git clone https://github.com/intel/idxd-config.git $ACCEL_CONFIG_SRC \
+    && cd $ACCEL_CONFIG_SRC \
     && ./autogen.sh \
-    && ./configure CFLAGS='-g -O2' --prefix=/usr --sysconfdir=/etc \
-                   --libdir=/usr/lib64 --enable-test=yes \
-                   --disable-docs \
-    && mkdir -p /root/rpmbuild/SOURCES \
+    && ./configure --prefix=/usr --libdir=/usr/lib64 \
+    \
+    && rpmdev-setuptree \
+    \
     && make rhel/accfg.spec \
-    && ./rpmbuild.sh \
-    && ls -l /root/rpmbuild/RPMS/$(uname -m) \
-    && rpm -ivh /root/rpmbuild/RPMS/$(uname -m)/accel-config-"*".rpm \
-    && ls -l /usr/include/accel-config/libaccel_config.h
+    && ./rpmbuild.sh
 
-RUN \
-    --mount=type=cache,target=/var/cache/dnf \
+# Install accel locally (safe)
+RUN rpm -ivh /root/rpmbuild/RPMS/$(uname -m)/accel-config*.rpm
+
+# Build SPDK RPMs
+RUN --mount=type=cache,target=/var/cache/dnf \
     --mount=type=cache,target=/var/lib/dnf \
-    DEPS="no" \
-    SPDK_VERSION=${SPDK_VERSION:?} \
-    RPM_RELEASE=0 \
-    MAKEFLAGS=$SPDK_MAKEFLAGS \
-    rpmbuild/rpm.sh $SPDK_CONFIGURE_ARGS --target-arch="${SPDK_TARGET_ARCH:?}"
+    set -euxo pipefail \
+    \
+    && dnf install -y \
+        gcc gcc-c++ make cmake \
+        glibc-devel \
+        \
+        rpm-build rpmdevtools \
+        git-core \
+        dnf-plugins-core \
+        pkgconf-pkg-config \
+        autoconf automake libtool \
+        which \
+        \
+        asciidoc xmlto \
+        \
+        libuuid-devel json-c-devel zlib-devel openssl-devel libaio-devel \
+        \
+        numactl numactl-devel \
+        \
+        libpcap libpcap-devel \
+        libbsd-devel \
+        jansson-devel \
+        libarchive-devel \
+        \
+        procps-ng \
+        \
+        meson ninja-build \
+        python3 python3-devel python3-pip python3-pyelftools \
+        \
+        librados-devel librbd-devel \
+        \
+        fuse3 fuse3-devel \
+        \
+        nasm isa-l-devel \
+        \
+        ncurses ncurses-devel readline-devel \
+        \
+        libfdt-devel elfutils-libelf-devel \
+        \
+        CUnit-devel \
+        libcmocka-devel \
+        keyutils-libs-devel \
+        liburing-devel \
+        \
+        --setopt=install_weak_deps=0 \
+    \
+    && pip3 install --break-system-packages uv \
+    \
+    && export PATH=/usr/local/bin:/usr/bin:$PATH \
+    \
+    && DEPS="no" \
+       SPDK_VERSION=${SPDK_VERSION} \
+       MAKEFLAGS="$SPDK_MAKEFLAGS" \
+       rpmbuild/rpm.sh $SPDK_CONFIGURE_ARGS --target-arch="${SPDK_TARGET_ARCH}"
+    
 
-# build bdevperf example, will not be a part of generated rpm
+# Build bdevperf binary
 RUN make -C ./examples/bdev/bdevperf
 
 #------------------------------------------------------------------------------
-FROM registry.redhat.io/ubi9/ubi:9.7 AS rpm-export
-COPY --from=build /root/rpmbuild/rpm /rpm
-COPY --from=build /root/rpmbuild/RPMS /rpm
-
-#------------------------------------------------------------------------------
-FROM registry.redhat.io/ubi9/ubi:9.7 as spdk
+FROM registry.redhat.io/ubi10/ubi:latest AS spdk
 
 ARG SPDK_CEPH_VERSION \
     SPDK_VERSION \
     DNF_OPTS
-
-ARG SPDK_CENTOS_BASE="https://mirror.stream.centos.org/9-stream/BaseOS/x86_64/os/Packages/"
-# This would become obsolete as the release rolls out new packages
-ARG SPDK_CENTOS_REPO_VER="9.0-30.el9"
 
 ARG SPDK_PKGDEP_ARGS \
     SPDK_CONFIGURE_ARGS \
@@ -180,55 +181,59 @@ LABEL io.spdk.version="$SPDK_VERSION" \
       io.spdk.git.branch="$SPDK_GIT_BRANCH" \
       io.spdk.git.commit="$SPDK_GIT_COMMIT"
 
-# CentOS-specific labels
-LABEL org.centos.url="$SPDK_CENTOS_BASE" \
-      org.centos.version="$SPDK_CENTOS_REPO_VER"
-
-COPY --from=build /etc/yum.conf /etc/yum.conf
-COPY --from=build /etc/yum.repos.d/ceph.repo /etc/yum.repos.d/ceph.repo
+COPY ceph.repo /etc/yum.repos.d/ceph.repo
 
 RUN \
+    --mount=type=secret,id=org-id \
+    --mount=type=secret,id=activation-key \
     --mount=type=bind,from=build,source=/root/rpmbuild/rpm,target=/rpm \
+    --mount=type=bind,from=build,source=/root/rpmbuild/RPMS,target=/accel-rpms \
     --mount=type=cache,target=/var/cache/dnf \
     --mount=type=cache,target=/var/lib/dnf \
-    rpm -vih $SPDK_CENTOS_BASE/centos-stream-repos-$SPDK_CENTOS_REPO_VER.noarch.rpm \
-             $SPDK_CENTOS_BASE/centos-gpg-keys-$SPDK_CENTOS_REPO_VER.noarch.rpm \
-    && rpm -vih https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm \
-    && dnf $DNF_OPTS install -y /rpm/$(uname -m)/*.rpm --exclude=openssl-fips-provider \
-    && dnf $DNF_OPTS update -y --exclude=openssl-fips-provider
+    set -eux; \
+    \
+    subscription-manager register \
+        --activationkey=$(cat /run/secrets/activation-key) \
+        --org=$(cat /run/secrets/org-id); \
+    \
+    subscription-manager repos \
+        --enable=rhel-10-for-$(uname -m)-baseos-rpms \
+        --enable=rhel-10-for-$(uname -m)-appstream-rpms \
+        --enable=codeready-builder-for-rhel-10-$(uname -m)-rpms; \
+    \
+    dnf $DNF_OPTS install -y \
+        dnf-plugins-core \
+        https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm; \
+    \
+    dnf $DNF_OPTS install -y \
+        /accel-rpms/$(uname -m)/accel-config-libs-[0-9]*.rpm \
+        /accel-rpms/$(uname -m)/accel-config-[0-9]*.rpm; \
+    \
+    dnf $DNF_OPTS install -y /rpm/$(uname -m)/*.rpm; \
+    \
+    subscription-manager unregister
 
-ENTRYPOINT [ "/usr/local/bin/nvmf_tgt" ]
-CMD [ "-u", "-r", "/var/tmp/spdk.sock" ]
-
+ENTRYPOINT ["/usr/local/bin/nvmf_tgt"]
+CMD ["-u", "-r", "/var/tmp/spdk.sock"]
 #------------------------------------------------------------------------------
 FROM spdk AS bdevperf
 
-# Default test run duration in secs
-ENV BDEVPERF_TEST_DURATION="90"
-
-# RPC socket path
-ENV BDEVPERF_SOCKET="/tmp/bdevperf.sock"
-
-# IO Queue depth
-ENV BDEVPERF_IO_QUEUE="128"
-
-# IO Block size
-ENV BDEVPERF_IO_BS="4096"
-
-# Type of I/O pattern, see https://spdk.io/doc/bdevperf.html
-# for available types
-ENV BDEVPERF_IO_TYPE="verify"
-
-# Core list
-ENV BDEVPERF_CORE_LIST="0"
+ENV BDEVPERF_TEST_DURATION="90" \
+    BDEVPERF_SOCKET="/tmp/bdevperf.sock" \
+    BDEVPERF_IO_QUEUE="128" \
+    BDEVPERF_IO_BS="4096" \
+    BDEVPERF_IO_TYPE="verify" \
+    BDEVPERF_CORE_LIST="0"
 
 COPY --from=build /src/build/examples/bdevperf /usr/local/bin/bdevperf
 COPY --from=build /src/examples/bdev/bdevperf/bdevperf.py /usr/libexec/spdk/scripts/bdevperf.py
+
 RUN echo "#!/bin/sh -x"                                                 > /entrypoint
 RUN echo "bdevperf -z -r \$BDEVPERF_SOCKET \\"                         >> /entrypoint
 RUN echo "         --lcores \$BDEVPERF_CORE_LIST \\"                   >> /entrypoint
 RUN echo "         -q \$BDEVPERF_IO_QUEUE -o \$BDEVPERF_IO_BS \\"      >> /entrypoint
 RUN echo "         -w \$BDEVPERF_IO_TYPE -t \$BDEVPERF_TEST_DURATION"  >> /entrypoint
+
 RUN chmod 755 /entrypoint
 
 ENTRYPOINT [ "/entrypoint" ]

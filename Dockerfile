@@ -6,26 +6,33 @@ ARG SPDK_IMAGE \
 
 #------------------------------------------------------------------------------
 # Base image for NVMEOF_TARGET=cli (nvmeof-cli)
-FROM registry.redhat.io/ubi9/ubi:9.7 AS base-cli
+FROM registry.redhat.io/ubi10/ubi:latest AS base-cli
 ENV GRPC_DNS_RESOLVER=native
 ENTRYPOINT ["python3", "-m", "control.cli"]
 CMD []
 
 #------------------------------------------------------------------------------
-# Base image for NVMEOF_TARGET=gateway (nvmeof-gateway)
 ARG SPDK_IMAGE
 FROM ${SPDK_IMAGE} AS base-gateway
 
-COPY $REMOTE_SOURCES $REMOTE_SOURCES_DIR
+# Define paths safely
+ENV PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ENV LD_LIBRARY_PATH="/lib64:/usr/lib64"
 
+RUN --mount=type=secret,id=org-id,target=/run/secrets/org-id \
+    --mount=type=secret,id=activation-key,target=/run/secrets/activation-key \
+    ["/usr/bin/python3", "-c", "import subprocess; key = open('/run/secrets/activation-key').read().strip(); org = open('/run/secrets/org-id').read().strip(); cmd = ['/usr/sbin/subscription-manager', 'register', '--activationkey=' + key, '--org=' + org]; subprocess.run(cmd, check=True)"]
+
+RUN subscription-manager repos --enable=codeready-builder-for-rhel-10-$(uname -m)-rpms
+
+#------------------------------------------------------------------------------
+ARG REMOTE_SOURCES
+ARG REMOTE_SOURCES_DIR
+
+COPY $REMOTE_SOURCES $REMOTE_SOURCES_DIR
 WORKDIR ${REMOTE_SOURCES_DIR}/${REMOTE_SOURCES}/app
 
-RUN --mount=type=secret,id=org-id --mount=type=secret,id=activation-key subscription-manager register --activationkey=$(cat /run/secrets/activation-key) --org=$(cat /run/secrets/org-id)
-
-RUN subscription-manager repos --enable=codeready-builder-for-rhel-9-$(arch)-rpms
-
-RUN dnf install -y python3-rados python3-rbd gdb ceph-mon-client-nvmeof librbd1 --nobest --allowerasing
-
+RUN dnf install -y python3-rados python3-rbd gdb ceph-mon-client-nvmeof librbd1 dnf-plugins-core openssl --nobest --allowerasing
 RUN mkdir -p /src
 
 ENTRYPOINT ["python3", "-m", "control"]
@@ -35,10 +42,10 @@ CMD ["-c", "ceph-nvmeof.conf"]
 # Intermediate layer for Python set-up
 FROM base-$NVMEOF_TARGET AS python-intermediate
 
-RUN \
-    --mount=type=cache,target=/var/cache/dnf \
-    --mount=type=cache,target=/var/lib/dnf \
-    dnf update -y --exclude=openssl-fips-provider
+# RUN \
+#     --mount=type=cache,target=/var/cache/dnf \
+#     --mount=type=cache,target=/var/lib/dnf \
+#     dnf update -y --exclude=openssl-fips-provider
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONIOENCODING=UTF-8 \
@@ -46,8 +53,10 @@ ENV PYTHONUNBUFFERED=1 \
     LANG=C.UTF-8 \
     PIP_NO_CACHE_DIR=off \
     PYTHON_MAJOR=3 \
-    PYTHON_MINOR=9 \
-    PDM_PREFER_BINARY=:all:
+    PYTHON_MINOR=12 \
+    PDM_PREFER_BINARY=:all: \
+    PIP_ONLY_BINARY=:all: \
+    PIP_DEFAULT_TIMEOUT=100
 
 ARG APPDIR=/src
 
@@ -124,10 +133,10 @@ WORKDIR $APPDIR
 
 #------------------------------------------------------------------------------
 FROM python-intermediate AS builder-base
-ARG PDM_VERSION=2.17.3 \
+ARG PDM_VERSION=2.26.8 \
     PDM_INSTALL_CMD=install \
     PDM_INSTALL_FLAGS="-v --no-isolation --no-self --no-editable" \
-    PDM_INSTALL_DEV=""
+    PDM_INSTALL_DEV="--dev"
 ENV PDM_INSTALL_FLAGS="$PDM_INSTALL_FLAGS $PDM_INSTALL_DEV"
 
 ENV PDM_CHECK_UPDATE=0
@@ -136,15 +145,18 @@ ENV PDM_CHECK_UPDATE=0
 RUN \
     --mount=type=cache,target=/var/cache/dnf \
     --mount=type=cache,target=/var/lib/dnf \
-    dnf install -y python3-pip && \
-    dnf install -y gcc gcc-c++ python3-devel
+    dnf install -y python3-pip gcc gcc-c++ python3-devel libffi-devel git openssl-devel rust cargo 
 RUN \
     --mount=type=cache,target=/root/.cache/pip \
-    pip install -U pip setuptools wheel
+    pip install -U pip "setuptools<82" wheel
 
 RUN \
     --mount=type=cache,target=/root/.cache/pip \
-    pip install pdm==$PDM_VERSION
+    pip install --ignore-installed pdm==$PDM_VERSION
+
+RUN \
+    --mount=type=cache,target=/root/.cache/pip \
+    pip install maturin
 
 #------------------------------------------------------------------------------
 FROM builder-base AS builder
