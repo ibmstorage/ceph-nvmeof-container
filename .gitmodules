@@ -1,4 +1,4 @@
 [submodule "ceph-nvmeof"]
 	path = ceph-nvmeof
 	url = https://github.com/ceph/ceph-nvmeof.git
-	branch = tentacle_9.1
+	branch = tentacle_9.1-1.6.18-hf-17197
