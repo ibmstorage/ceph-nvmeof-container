@@ -156,6 +156,10 @@ RUN \
 
 RUN \
     --mount=type=cache,target=/root/.cache/pip \
+    pip install -U pip "hishel<=1.4.0"
+
+RUN \
+    --mount=type=cache,target=/root/.cache/pip \
     pip install maturin
 
 #------------------------------------------------------------------------------
