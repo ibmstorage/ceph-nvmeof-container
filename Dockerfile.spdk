@@ -10,11 +10,15 @@ ARG DNF_OPTS="\
 
 ARG ACCEL_CONFIG_SRC="/accel-config"
 
+# Optional: build against ubi9 or ubi10 RHEL content (9 or 10)
+ARG RHEL_MAJOR=10
+
 #------------------------------------------------------------------------------
 
-FROM registry.redhat.io/ubi10/ubi:latest AS build
+FROM registry.redhat.io/ubi${RHEL_MAJOR}/ubi:latest AS build
 
 ARG TARGETPLATFORM
+ARG RHEL_MAJOR
 ARG SPDK_VERSION \
     SPDK_CEPH_VERSION \
     SPDK_PKGDEP_ARGS \
@@ -43,9 +47,9 @@ RUN --mount=type=secret,id=org-id \
         --activationkey=$(cat /run/secrets/activation-key) \
         --org=$(cat /run/secrets/org-id) \
     && subscription-manager repos \
-        --enable=rhel-10-for-$(uname -m)-baseos-rpms \
-        --enable=rhel-10-for-$(uname -m)-appstream-rpms \
-        --enable=codeready-builder-for-rhel-10-$(uname -m)-rpms
+        --enable=rhel-${RHEL_MAJOR}-for-$(uname -m)-baseos-rpms \
+        --enable=rhel-${RHEL_MAJOR}-for-$(uname -m)-appstream-rpms \
+        --enable=codeready-builder-for-rhel-${RHEL_MAJOR}-$(uname -m)-rpms
 
 # Install build dependencies
 RUN --mount=type=cache,target=/var/cache/dnf \
@@ -54,7 +58,7 @@ RUN --mount=type=cache,target=/var/cache/dnf \
         rpm-build git-core \
         dnf-plugins-core \
     && dnf install -y \
-        https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm \
+        https://dl.fedoraproject.org/pub/epel/epel-release-latest-${RHEL_MAJOR}.noarch.rpm \
     && dnf groupinstall -y "Development Tools" || true \
     && dnf install -y \
         autoconf automake libtool pkgconf rpmdevtools \
@@ -138,11 +142,13 @@ RUN --mount=type=cache,target=/var/cache/dnf \
 RUN make -C ./examples/bdev/bdevperf
 
 #------------------------------------------------------------------------------
-FROM registry.redhat.io/ubi10/ubi:latest AS spdk
+FROM registry.redhat.io/ubi${RHEL_MAJOR}/ubi:latest AS spdk
 
 ARG SPDK_CEPH_VERSION \
     SPDK_VERSION \
     DNF_OPTS
+
+ARG RHEL_MAJOR
 
 ARG SPDK_PKGDEP_ARGS \
     SPDK_CONFIGURE_ARGS \
@@ -197,13 +203,13 @@ RUN \
         --org=$(cat /run/secrets/org-id); \
     \
     subscription-manager repos \
-        --enable=rhel-10-for-$(uname -m)-baseos-rpms \
-        --enable=rhel-10-for-$(uname -m)-appstream-rpms \
-        --enable=codeready-builder-for-rhel-10-$(uname -m)-rpms; \
+        --enable=rhel-${RHEL_MAJOR}-for-$(uname -m)-baseos-rpms \
+        --enable=rhel-${RHEL_MAJOR}-for-$(uname -m)-appstream-rpms \
+        --enable=codeready-builder-for-rhel-${RHEL_MAJOR}-$(uname -m)-rpms; \
     \
     dnf $DNF_OPTS install -y \
         dnf-plugins-core \
-        https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm; \
+        https://dl.fedoraproject.org/pub/epel/epel-release-latest-${RHEL_MAJOR}.noarch.rpm; \
     \
     dnf $DNF_OPTS install -y \
         /accel-rpms/$(uname -m)/accel-config-libs-[0-9]*.rpm \
