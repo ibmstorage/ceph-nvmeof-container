@@ -36,16 +36,6 @@ COPY spdk/rpmbuild/ /src/rpmbuild/
 RUN ls -l /src/rpmbuild/
 RUN ls -l /src/configure && ls -l /src/rpmbuild/rpm.sh
 
-RUN --mount=type=secret,id=org-id \
-    --mount=type=secret,id=activation-key \
-    set -eux \
-    && subscription-manager register \
-        --activationkey=$(cat /run/secrets/activation-key) \
-        --org=$(cat /run/secrets/org-id) \
-    && subscription-manager repos \
-        --enable=rhel-9-for-$(uname -m)-baseos-rpms \
-        --enable=rhel-9-for-$(uname -m)-appstream-rpms \
-        --enable=codeready-builder-for-rhel-9-$(uname -m)-rpms
 
 # Install build dependencies
 RUN --mount=type=cache,target=/var/cache/dnf \
