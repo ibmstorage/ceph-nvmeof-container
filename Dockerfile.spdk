@@ -1,12 +1,13 @@
 # syntax = docker/dockerfile:1.4
 
 ARG DNF_OPTS="\
+  --enablerepo crb \
   --nobest \
   --nodocs \
   --setopt=install_weak_deps=0 \
   --setopt=keepcache=1 \
   --setopt=cachedir=/var/cache/dnf \
-"
+  "
 
 ARG ACCEL_CONFIG_SRC="/accel-config"
 
@@ -14,14 +15,14 @@ ARG ACCEL_CONFIG_SRC="/accel-config"
 
 FROM quay.io/centos/centos:stream9 AS build
 
-ARG TARGETPLATFORM
-ARG SPDK_VERSION \
+ARG TARGETPLATFORM \
+    SPDK_VERSION \
     SPDK_CEPH_VERSION \
+    DNF_OPTS \
     SPDK_PKGDEP_ARGS \
     SPDK_CONFIGURE_ARGS \
     SPDK_TARGET_ARCH \
     SPDK_MAKEFLAGS \
-    DNF_OPTS \
     ACCEL_CONFIG_SRC
 
 WORKDIR /src
@@ -37,8 +38,8 @@ RUN ls -l /src/rpmbuild/
 RUN ls -l /src/configure && ls -l /src/rpmbuild/rpm.sh
 
 
-# Install build dependencies
-RUN --mount=type=cache,target=/var/cache/dnf \
+RUN \
+    --mount=type=cache,target=/var/cache/dnf \
     --mount=type=cache,target=/var/lib/dnf \
     dnf install -y $DNF_OPTS \
         rpm-build git-core \
@@ -46,7 +47,8 @@ RUN --mount=type=cache,target=/var/cache/dnf \
     && dnf install -y \
         https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm \
     && dnf groupinstall -y "Development Tools" || true \
-    && dnf install -y \
+    && dnf config-manager --set-enabled crb \
+    && dnf install $DNF_OPTS -y \
         autoconf automake libtool pkgconf rpmdevtools \
         which asciidoc xmlto \
         libuuid-devel json-c-devel zlib-devel openssl-devel
@@ -180,17 +182,6 @@ RUN \
     --mount=type=bind,from=build,source=/root/rpmbuild/RPMS,target=/accel-rpms \
     --mount=type=cache,target=/var/cache/dnf \
     --mount=type=cache,target=/var/lib/dnf \
-    set -eux; \
-    \
-    subscription-manager register \
-        --activationkey=$(cat /run/secrets/activation-key) \
-        --org=$(cat /run/secrets/org-id); \
-    \
-    subscription-manager repos \
-        --enable=rhel-9-for-$(uname -m)-baseos-rpms \
-        --enable=rhel-9-for-$(uname -m)-appstream-rpms \
-        --enable=codeready-builder-for-rhel-9-$(uname -m)-rpms; \
-    \
     dnf $DNF_OPTS install -y \
         dnf-plugins-core \
         https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm; \
@@ -201,7 +192,7 @@ RUN \
     \
     dnf $DNF_OPTS install -y /rpm/$(uname -m)/*.rpm; \
     \
-    subscription-manager unregister
+    dnf $DNF_OPTS update -y
 
 ENTRYPOINT ["/usr/local/bin/nvmf_tgt"]
 CMD ["-u", "-r", "/var/tmp/spdk.sock"]
